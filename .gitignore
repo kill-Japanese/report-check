@@ -12,13 +12,17 @@ venv/
 env/
 ENV/
 
-# 数据文件（敏感，不提交）
+# 数据文件（敏感，不提交根目录的）
 users.json
 sessions.json
 rate_limit.json
 协作数据.json
 audit.log
 *.log
+# data/ 目录用于持久化，会提交到 GitHub（除了会话和限流数据）
+!data/
+data/sessions.json
+data/rate_limit.json
 
 # 上传文件
 .uploads/

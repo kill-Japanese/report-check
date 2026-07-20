@@ -29,7 +29,9 @@ import auth
 # ==================== 配置 ====================
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, '协作数据.json')
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+DATA_FILE = os.path.join(DATA_DIR, '协作数据.json')
 HTML_FILE = os.path.join(BASE_DIR, '项目延期点检表.html')
 
 # 安全头
@@ -1240,6 +1242,16 @@ window.CURRENT_USER = {user_info};
                 self.send_json({'success': False, 'message': f'处理失败：{str(e)}'}, 500)
                 return
 
+        # --- 手动同步数据到 GitHub ---
+        if path == '/api/sync-github':
+            if not self.require_permission('user_manage'):
+                return
+            data = self.read_body()
+            message = data.get('message', '手动同步') if isinstance(data, dict) else '手动同步'
+            ok, msg = auth.sync_to_github(message)
+            self.send_json({'success': ok, 'message': msg})
+            return
+
         # 其他接口：读取 JSON body
         data = self.read_body()
 
@@ -1473,6 +1485,8 @@ window.CURRENT_USER = {user_info};
 def main():
     os.chdir(BASE_DIR)
     auth.init_auth()
+    # 启动自动同步到 GitHub（每5分钟）
+    auth.auto_sync_periodically(300)
 
     if not os.path.exists(DATA_FILE):
         save_data(load_data())
@@ -1488,6 +1502,7 @@ def main():
     print()
     print("✅ 已启用: 登录认证 · 角色权限 · Session 管理")
     print("✅ 已启用: 登录限流 · CSRF 防护 · 操作审计")
+    print("✅ 已启用: GitHub 数据持久化（每5分钟自动同步）")
     print()
     print("🌐 访问地址：")
     print(f"   本机访问: http://localhost:{PORT}")

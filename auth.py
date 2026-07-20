@@ -25,12 +25,16 @@ from functools import wraps
 
 # ==================== 配置 ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
 
-# 数据文件
-USERS_FILE = os.path.join(BASE_DIR, 'users.json')
+# 数据文件（持久化：存在 data/ 目录，会提交到 GitHub）
+USERS_FILE = os.path.join(DATA_DIR, 'users.json')
+AUDIT_LOG_FILE = os.path.join(DATA_DIR, 'audit.log')
+
+# 临时数据（不持久化：存在根目录，随部署重置）
 SESSIONS_FILE = os.path.join(BASE_DIR, 'sessions.json')
 RATE_LIMIT_FILE = os.path.join(BASE_DIR, 'rate_limit.json')
-AUDIT_LOG_FILE = os.path.join(BASE_DIR, 'audit.log')
 
 # 安全配置
 PASSWORD_HASH_ITERATIONS = 200_000  # PBKDF2 迭代次数
@@ -492,6 +496,61 @@ def init_auth():
 
     t = threading.Thread(target=_periodic_cleanup, daemon=True)
     t.start()
+
+
+# ==================== GitHub 数据同步 ====================
+
+def sync_to_github(message: str = '同步数据') -> tuple[bool, str]:
+    """将 data/ 目录的持久化数据提交并推送到 GitHub
+    
+    Returns:
+        (success: bool, message: str)
+    """
+    import subprocess
+    try:
+        # 检查是否有 git 仓库
+        if not os.path.exists(os.path.join(BASE_DIR, '.git')):
+            return False, '未检测到 Git 仓库'
+        
+        # 检查 data/ 目录是否有变更
+        result = subprocess.run(
+            ['git', 'status', '--porcelain', 'data/'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        if not result.stdout.strip():
+            return True, '数据无变更，无需同步'
+        
+        # 添加、提交、推送
+        subprocess.run(['git', 'add', 'data/'], capture_output=True, cwd=BASE_DIR, timeout=10)
+        commit_msg = f'[数据同步] {message} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
+        subprocess.run(['git', 'commit', '-m', commit_msg], capture_output=True, cwd=BASE_DIR, timeout=10)
+        push_result = subprocess.run(
+            ['git', 'push', 'origin', 'main'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+        )
+        if push_result.returncode != 0:
+            return False, f'推送失败: {push_result.stderr[:200]}'
+        _audit_log('GITHUB_SYNC', 'system', message)
+        return True, '数据已同步到 GitHub'
+    except subprocess.TimeoutExpired:
+        return False, '同步超时'
+    except Exception as e:
+        return False, f'同步失败: {str(e)}'
+
+
+def auto_sync_periodically(interval_seconds: int = 300):
+    """定期自动同步数据到 GitHub（默认5分钟）"""
+    def _sync_loop():
+        while True:
+            time.sleep(interval_seconds)
+            try:
+                sync_to_github('定期自动同步')
+            except Exception:
+                pass
+    
+    t = threading.Thread(target=_sync_loop, daemon=True)
+    t.start()
+    _audit_log('AUTO_SYNC', 'system', f'已启动自动同步，间隔 {interval_seconds} 秒')
 
 
 if __name__ == '__main__':
