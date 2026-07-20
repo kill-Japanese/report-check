@@ -2,8 +2,8 @@
   "admin": {
     "username": "admin",
     "password": {
-      "hash": "987ef9926e732fbc1add54a6d0d4db947fc8a64a905d8a8339e6af14f0095a27",
-      "salt": "fbccb78b07b97e0d864750d107f110a642510923afc250236d20e0b26f51ffbc",
+      "hash": "f339f6cd57329ec787a0e816a9679b24246684550e537c15f47bbb75ff7a6a84",
+      "salt": "e9cd1442df5ca5c077c698e78a2432692ad3c8ecfa994645aedfd6c034fb644d",
       "iterations": 200000,
       "algorithm": "PBKDF2-HMAC-SHA256"
     },
