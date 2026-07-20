@@ -171,65 +171,6 @@ def read_excel_projects() -> list:
     
     return projects
 
-def _find_merged_range(ws, row: int, col: int):
-    """查找单元格所属的合并区域，返回 (min_row, max_row, min_col, max_col) 或 None"""
-    from openpyxl.cell.cell import MergedCell
-    cell = ws.cell(row=row, column=col)
-    if not isinstance(cell, MergedCell):
-        return None
-    for merged_range in ws.merged_cells.ranges:
-        if (merged_range.min_row <= row <= merged_range.max_row and
-            merged_range.min_col <= col <= merged_range.max_col):
-            return merged_range
-    return None
-
-
-def _safe_write_cell(ws, row: int, col: int, value) -> bool:
-    """
-    安全地写入Excel单元格，自动处理合并单元格：
-    - 如果单元格不是合并单元格，直接写入
-    - 如果单元格是合并区域的左上角，直接写入
-    - 如果单元格在合并区域内但不是左上角：
-      1. 先取消合并
-      2. 将原值填充到原合并区域的所有单元格
-      3. 修改目标单元格的值
-    返回: 是否成功写入
-    """
-    from openpyxl.cell.cell import MergedCell
-    
-    merged_range = _find_merged_range(ws, row, col)
-    
-    if merged_range is None:
-        # 不是合并单元格，直接写入
-        ws.cell(row=row, column=col, value=value)
-        return True
-    
-    # 是合并单元格
-    min_r, max_r = merged_range.min_row, merged_range.max_row
-    min_c, max_c = merged_range.min_col, merged_range.max_col
-    
-    if row == min_r and col == min_c:
-        # 恰好是合并区域的左上角，直接写入
-        ws.cell(row=row, column=col, value=value)
-        return True
-    
-    # 在合并区域内但不是左上角：需要先取消合并
-    # 1. 先获取合并区域的原值
-    original_value = ws.cell(row=min_r, column=min_c).value
-    
-    # 2. 取消合并
-    ws.unmerge_cells(str(merged_range))
-    
-    # 3. 将原值填充到原合并区域的所有单元格
-    for r in range(min_r, max_r + 1):
-        for c in range(min_c, max_c + 1):
-            ws.cell(row=r, column=c, value=original_value)
-    
-    # 4. 写入目标单元格的新值
-    ws.cell(row=row, column=col, value=value)
-    return True
-
-
 def apply_collab_to_excel() -> tuple[bool, str, int]:
     """
     将协作数据（新增/删除/归档/编辑）应用到原始 Excel
@@ -237,13 +178,11 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
     
     执行顺序（关键！避免行号漂移）：
     1. 先处理归档（不改变行号，使用初始映射）
-    2. 再处理编辑（不改变行号，使用初始映射）
-    3. 再处理删除（从大到小删除，使用初始映射）
-    4. 最后处理新增（追加到末尾，不影响已有行号）
+    2. 再处理删除（从大到小删除，使用初始映射）
+    3. 最后处理新增（追加到末尾，不影响已有行号）
     """
     collab = load_collab_data()
     changes = 0
-    errors = []
     
     if not os.path.exists(EXCEL_FILE):
         return False, '原始 Excel 文件不存在', 0
@@ -333,19 +272,9 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
                         if field in ('项目开始时间', '项目结束时间', '资源开始时间', '资源结束时间'):
                             if not value or value in ['', '1900-01-01', '2100-01-01']:
                                 continue
-                        try:
-                            # 使用安全写入，自动处理合并单元格
-                            write_ok = _safe_write_cell(ws, row_num, col, value)
-                            if write_ok:
-                                changes += 1
-                                print(f"   ✏️  编辑: Excel第{row_num}行, {field}={value}")
-                            else:
-                                errors.append(f"编辑失败: 第{row_num}行 {field}")
-                        except Exception as e:
-                            # 单个字段编辑失败不影响其他操作
-                            err_msg = f"编辑第{row_num}行{field}失败: {str(e)}"
-                            errors.append(err_msg)
-                            print(f"   ⚠️  {err_msg}")
+                        ws.cell(row=row_num, column=col, value=value)
+                        changes += 1
+                        print(f"   ✏️  编辑: Excel第{row_num}行, {field}={value}")
         
         # ============== 2. 再处理删除（从大到小删除，避免行号漂移） ==============
         deleted_ids = set()
@@ -416,12 +345,6 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
         
     except Exception as e:
         return False, f'写入 Excel 失败: {str(e)}', changes
-    
-    if errors:
-        error_detail = '; '.join(errors[:5])  # 最多显示5个错误
-        if len(errors) > 5:
-            error_detail += f' 等{len(errors)}个错误'
-        return True, f'已应用 {changes} 项变更到 Excel (部分警告: {error_detail})', changes
     
     return True, f'已应用 {changes} 项变更到 Excel', changes
 
