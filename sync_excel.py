@@ -24,6 +24,7 @@ HTML_FILE = os.path.join(BASE_DIR, '项目延期点检表.html')
 
 # Excel 列配置（0-based 索引）
 COL_ARCHIVED = 20  # 第21列(U列)用于存放归档标志
+COL_DELETED = 21   # 第22列(V列)用于存放删除标志（软删除，避免合并单元格破坏）
 
 # ==================== Git 操作 ====================
 
@@ -130,6 +131,16 @@ def read_excel_projects() -> list:
             current_start = row[6] if pd.notna(row[6]) else None
             current_end = row[7] if pd.notna(row[7]) else None
             current_desc = str(row[8]) if pd.notna(row[8]) else ''
+        else:
+            # 即使项目名（F列）没值（合并单元格的后续行），
+            # 也要检查项目描述（I列）是否有独立值（合并被取消后可能有编辑值）
+            if pd.notna(row[8]):
+                current_desc = str(row[8])
+            # 同样检查开始/结束时间
+            if pd.notna(row[6]):
+                current_start = row[6]
+            if pd.notna(row[7]):
+                current_end = row[7]
         
         resource_type = str(row[9]) if pd.notna(row[9]) else ''
         resource_name = str(row[10]) if pd.notna(row[10]) else ''
@@ -152,6 +163,15 @@ def read_excel_projects() -> list:
         if COL_ARCHIVED < len(row) and pd.notna(row[COL_ARCHIVED]):
             archived_flag = str(row[COL_ARCHIVED]).strip()
         is_archived = archived_flag in ('已归档', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y')
+        
+        # 读取删除标志（第22列，V列）- 软删除，已删除的项目不返回
+        deleted_flag = ''
+        if COL_DELETED < len(row) and pd.notna(row[COL_DELETED]):
+            deleted_flag = str(row[COL_DELETED]).strip()
+        is_deleted = deleted_flag in ('已删除', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y')
+        
+        if is_deleted:
+            continue  # 跳过已删除的项目
         
         if current_project and has_resource:
             projects.append({
@@ -347,7 +367,9 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
                             errors.append(err_msg)
                             print(f"   ⚠️  {err_msg}")
         
-        # ============== 2. 再处理删除（从大到小删除，避免行号漂移） ==============
+        # ============== 2. 再处理删除（软删除：标记V列为"已删除"，不物理删除行） ==============
+        # 注意：不能用 ws.delete_rows() 物理删除，因为Excel有大量合并单元格
+        # 物理删除会导致合并区域错乱，丢失多行数据
         deleted_ids = set()
         for did in collab.get('deletedIds', []):
             try:
@@ -356,17 +378,20 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
                 deleted_ids.add(did)
         
         if deleted_ids:
-            # 获取要删除的Excel行号，从大到小排序
-            rows_to_delete = []
             for p in existing_projects:
-                if p['id'] in deleted_ids or str(p['id']) in deleted_ids:
-                    rows_to_delete.append(id_to_excel_row[p['id']])
-            
-            rows_to_delete.sort(reverse=True)
-            for row_num in rows_to_delete:
-                ws.delete_rows(row_num)
-                changes += 1
-                print(f"   🗑️  删除Excel第{row_num}行")
+                pid = p['id']
+                if pid in deleted_ids or str(pid) in deleted_ids:
+                    row_num = id_to_excel_row.get(pid) or id_to_excel_row.get(str(pid))
+                    if row_num:
+                        # 软删除：在V列(COL_DELETED+1)标记"已删除"
+                        try:
+                            _safe_write_cell(ws, row_num, COL_DELETED + 1, '已删除')
+                            changes += 1
+                            print(f"   🗑️  软删除: Excel第{row_num}行 ({p.get('项目', '')})")
+                        except Exception as e:
+                            err_msg = f"软删除第{row_num}行失败: {str(e)}"
+                            errors.append(err_msg)
+                            print(f"   ⚠️  {err_msg}")
         
         # ============== 3. 最后处理新增项目（追加到末尾） ==============
         new_projects = collab.get('newProjects', [])
