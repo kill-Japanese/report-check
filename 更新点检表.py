@@ -220,6 +220,14 @@ for idx in range(3, len(df)):
             archived_flag = str(row[20]).strip()
         is_archived = archived_flag in ('已归档', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y')
         
+        # 读取删除标志（第22列，V列）- 软删除，已删除的项目不加入列表
+        deleted_flag = ''
+        if 21 < len(row) and pd.notna(row[21]):
+            deleted_flag = str(row[21]).strip()
+        is_deleted = deleted_flag in ('已删除', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y')
+        if is_deleted:
+            continue  # 跳过已软删除的项目
+        
         # 跳过空行：没有资源类型和资源名称的行不处理
         has_resource = resource_type.strip() or resource_name.strip()
         if has_resource:
