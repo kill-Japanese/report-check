@@ -287,6 +287,9 @@ if all_new_projects:
     for np in all_new_projects:
         if np.get('id') is None or not any(p['id'] == np.get('id') for p in projects):
             np['id'] = new_id_start
+            # 【修复】先设置默认值，确保字段始终存在（防止KeyError）
+            np['资源剩余天数'] = None
+            np['项目剩余天数'] = None
             # 重新计算剩余天数
             if np.get('资源结束时间'):
                 try:
@@ -300,9 +303,47 @@ if all_new_projects:
                     np['项目剩余天数'] = (proj_end - today).days
                 except:
                     np['项目剩余天数'] = None
+            # 确保其他必要字段也存在
+            for field in ['部门', '项目', '项目描述', '资源类型', '资源名称', '日平均工时', '已归档',
+                          '项目开始时间', '项目结束时间', '资源开始时间', '资源结束时间']:
+                if field not in np:
+                    if field == '日平均工时':
+                        np[field] = 0
+                    elif field == '已归档':
+                        np[field] = False
+                    elif field == '项目开始时间' or field == '资源开始时间':
+                        np[field] = '1900-01-01'
+                    elif field == '项目结束时间' or field == '资源结束时间':
+                        np[field] = '2100-01-01'
+                    else:
+                        np[field] = ''
             projects.append(np)
             new_id_start += 1
     print(f"📥 已加载 {len(all_new_projects)} 条新增项目")
+
+# ==================== 2.6 全局字段完整性检查 ====================
+# 确保所有项目都有必要的字段，防止后续 KeyError
+REQUIRED_FIELDS = [
+    'id', '部门', '项目', '项目开始时间', '项目结束时间',
+    '项目剩余天数', '项目描述', '资源类型', '资源名称',
+    '资源开始时间', '资源结束时间', '资源剩余天数',
+    '日平均工时', '已归档'
+]
+for p in projects:
+    for field in REQUIRED_FIELDS:
+        if field not in p:
+            if field == '日平均工时':
+                p[field] = 0
+            elif field == '已归档':
+                p[field] = False
+            elif field == '项目剩余天数' or field == '资源剩余天数':
+                p[field] = None
+            elif field == '项目开始时间' or field == '资源开始时间':
+                p[field] = '1900-01-01'
+            elif field == '项目结束时间' or field == '资源结束时间':
+                p[field] = '2100-01-01'
+            else:
+                p[field] = ''
 
 # ==================== 3. 分类统计（排除已归档项目）====================
 # 过滤出未归档的项目用于统计
@@ -1305,7 +1346,12 @@ async function collabLoadData() {
     }
     
     collabLastUpdate = data.lastUpdate || '';
-    
+
+    // 【关键修复】从 RAW_DATA 同步 Excel 中的归档标志
+    // 服务器端的 archived 在 full_sync 后会被清空（因为已写入Excel），
+    // 所以必须以 Excel（RAW_DATA）中的归档状态为准
+    syncFromExcel();
+
     // 保存到本地
     localStorage.setItem('projectEdits', JSON.stringify(localEdits));
     localStorage.setItem('projectNotes', JSON.stringify(notes));
@@ -3063,17 +3109,46 @@ function saveData() {
 }
 
 function resetAll() {
-  if (confirm('确定要清空所有本地修改（备注、点检、计划编辑、归档）吗？\\n（不会影响原始Excel文件）')) {
+  if (confirm('确定要清空所有本地修改（备注、点检、计划编辑、归档、新增项目）吗？\\n（不会影响原始Excel文件）')) {
+    // 1. 清空所有本地状态
     localEdits = {};
     notes = {};
     checked = {};
     archived = {};
+    deletedIds = [];
+    newProjects = [];
+    customEmails = {};
+
+    // 2. 从 localStorage 移除所有相关项
     localStorage.removeItem('projectEdits');
     localStorage.removeItem('projectNotes');
     localStorage.removeItem('projectChecked');
     localStorage.removeItem('projectArchived');
-    updateStats();
-    renderTable();
+    localStorage.removeItem('deletedIds');
+    localStorage.removeItem('newProjects');
+    localStorage.removeItem('customEmails');
+
+    // 3. 【关键修复】从 RAW_DATA 同步 Excel 中的归档标志
+    //    重置后，Excel中U列标记为"已归档"的项目仍然应该在归档看板中
+    syncFromExcel();
+
+    // 4. 协作模式：从服务器重新拉取数据（获取服务器端的协作状态）
+    if (collabIsEnabled()) {
+      collabLoadData().then(function() {
+        // 服务器数据加载完成后，再次同步Excel归档状态（防止服务器覆盖）
+        syncFromExcel();
+        updateStats();
+        renderTable();
+        initHoursPanel();
+        initResourceSearch();
+      });
+    } else {
+      // 非协作模式：直接刷新
+      updateStats();
+      renderTable();
+      initHoursPanel();
+      initResourceSearch();
+    }
   }
 }
 

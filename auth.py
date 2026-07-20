@@ -150,23 +150,74 @@ def _audit_log(action: str, username: str, detail: str = ''):
 # ==================== Git 同步工具 ====================
 
 def _git_push(message: str) -> tuple[bool, str]:
-    """提交并推送到 GitHub"""
+    """提交并推送到 GitHub（带失败重试机制）
+    
+    修复要点：
+    1. 先检查是否有未推送的 commit（本地领先远程），如果有直接 push，无需重复 commit
+    2. 如果 push 失败，执行 git reset --soft 撤销本次 commit，
+       保留工作区变更，确保下次调用可以重试
+    3. 只检查用户管理.xlsx 和 data/ 的变更状态，避免被其他文件干扰
+    """
     try:
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
+
+        # ===== 修复1：先检查是否有未推送的 commit =====
+        # 如果本地领先远程，直接 push，不要重复 commit
+        ahead = subprocess.run(
+            ['git', 'rev-list', '--count', 'origin/main..HEAD'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        try:
+            ahead_count = int(ahead.stdout.strip())
+        except ValueError:
+            ahead_count = 0
+
+        if ahead_count > 0:
+            # 有未推送的 commit，直接 push
+            push = subprocess.run(
+                ['git', 'push', 'origin', 'main'],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+            )
+            if push.returncode != 0:
+                return False, f'推送失败（重试 {ahead_count} 个待推送提交）: {push.stderr[:200]}'
+            return True, f'已推送 {ahead_count} 个待提交到 GitHub'
+
+        # ===== 正常流程：add → 检查变更 → commit → push =====
         subprocess.run(['git', 'add', '用户管理.xlsx', 'data/'],
                        capture_output=True, cwd=BASE_DIR, timeout=10)
-        result = subprocess.run(['git', 'status', '--porcelain'],
-                                capture_output=True, text=True, cwd=BASE_DIR, timeout=10)
+
+        # 只检查我们关心的文件是否有变更
+        result = subprocess.run(
+            ['git', 'status', '--porcelain', '用户管理.xlsx', 'data/'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
         if not result.stdout.strip():
             return True, '无变更'
+
         commit_msg = f'[用户同步] {message} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
-        subprocess.run(['git', 'commit', '-m', commit_msg],
-                       capture_output=True, cwd=BASE_DIR, timeout=10)
-        push = subprocess.run(['git', 'push', 'origin', 'main'],
-                              capture_output=True, text=True, cwd=BASE_DIR, timeout=30)
+        commit_result = subprocess.run(
+            ['git', 'commit', '-m', commit_msg],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        if commit_result.returncode != 0:
+            # commit 失败（可能没有可提交的内容），不算错误
+            if 'nothing to commit' in (commit_result.stdout + commit_result.stderr):
+                return True, '无变更'
+            return False, f'提交失败: {commit_result.stderr[:200]}'
+
+        push = subprocess.run(
+            ['git', 'push', 'origin', 'main'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+        )
         if push.returncode != 0:
-            return False, f'推送失败: {push.stderr[:200]}'
+            # ===== 修复2：push 失败时，撤销 commit，保留工作区变更，以便下次重试 =====
+            subprocess.run(
+                ['git', 'reset', '--soft', 'HEAD~1'],
+                capture_output=True, cwd=BASE_DIR, timeout=10
+            )
+            return False, f'推送失败（已撤销本地提交，可重试）: {push.stderr[:200]}'
+
         return True, '已同步到 GitHub'
     except Exception as e:
         return False, f'同步失败: {str(e)}'
@@ -640,7 +691,10 @@ def init_auth():
 # ==================== GitHub 数据同步 ====================
 
 def sync_to_github(message: str = '同步数据') -> tuple[bool, str]:
-    """将 data/ 目录的持久化数据提交并推送到 GitHub
+    """将 data/ 目录和 用户管理.xlsx 的持久化数据提交并推送到 GitHub
+    
+    修复：同步用户管理.xlsx（之前只同步 data/），
+         并增加 push 失败重试机制。
     
     Returns:
         (success: bool, message: str)
@@ -650,25 +704,61 @@ def sync_to_github(message: str = '同步数据') -> tuple[bool, str]:
         # 检查是否有 git 仓库
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
-        
-        # 检查 data/ 目录是否有变更
+
+        # ===== 修复：先检查是否有未推送的 commit =====
+        ahead = subprocess.run(
+            ['git', 'rev-list', '--count', 'origin/main..HEAD'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        try:
+            ahead_count = int(ahead.stdout.strip())
+        except ValueError:
+            ahead_count = 0
+
+        if ahead_count > 0:
+            push = subprocess.run(
+                ['git', 'push', 'origin', 'main'],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+            )
+            if push.returncode != 0:
+                return False, f'推送失败（重试 {ahead_count} 个待推送提交）: {push.stderr[:200]}'
+            return True, f'已推送 {ahead_count} 个待提交到 GitHub'
+
+        # 检查 data/ 和 用户管理.xlsx 是否有变更
         result = subprocess.run(
-            ['git', 'status', '--porcelain', 'data/'],
+            ['git', 'status', '--porcelain', 'data/', '用户管理.xlsx'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=10
         )
         if not result.stdout.strip():
             return True, '数据无变更，无需同步'
-        
+
         # 添加、提交、推送
-        subprocess.run(['git', 'add', 'data/'], capture_output=True, cwd=BASE_DIR, timeout=10)
+        subprocess.run(
+            ['git', 'add', 'data/', '用户管理.xlsx'],
+            capture_output=True, cwd=BASE_DIR, timeout=10
+        )
         commit_msg = f'[数据同步] {message} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
-        subprocess.run(['git', 'commit', '-m', commit_msg], capture_output=True, cwd=BASE_DIR, timeout=10)
+        commit_result = subprocess.run(
+            ['git', 'commit', '-m', commit_msg],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        if commit_result.returncode != 0:
+            if 'nothing to commit' in (commit_result.stdout + commit_result.stderr):
+                return True, '无变更'
+            return False, f'提交失败: {commit_result.stderr[:200]}'
+
         push_result = subprocess.run(
             ['git', 'push', 'origin', 'main'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         if push_result.returncode != 0:
-            return False, f'推送失败: {push_result.stderr[:200]}'
+            # push 失败，撤销 commit，保留工作区变更以便重试
+            subprocess.run(
+                ['git', 'reset', '--soft', 'HEAD~1'],
+                capture_output=True, cwd=BASE_DIR, timeout=10
+            )
+            return False, f'推送失败（已撤销本地提交，可重试）: {push_result.stderr[:200]}'
+
         _audit_log('GITHUB_SYNC', 'system', message)
         return True, '数据已同步到 GitHub'
     except subprocess.TimeoutExpired:

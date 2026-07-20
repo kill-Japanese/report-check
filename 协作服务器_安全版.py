@@ -1355,10 +1355,7 @@ window.CURRENT_USER = {user_info};
             old_pwd = data.get('old_password', '')
             new_pwd = data.get('new_password', '')
             ok, msg = auth.change_password(user['username'], old_pwd, new_pwd)
-            # 修改密码后自动同步到GitHub（持久化 must_change_pwd=False）
-            if ok:
-                sync_ok, sync_msg = sync_excel.git_push(f'用户{user["username"]}修改密码')
-                msg = msg + '（' + sync_msg + '）'
+            # 注：auth.change_password 内部已调用 save_users(push=True)，自动同步到 GitHub
             self.send_json({'success': ok, 'message': msg})
             return
 
@@ -1372,10 +1369,7 @@ window.CURRENT_USER = {user_info};
                 data.get('role', 'viewer'),
                 data.get('email', '')
             )
-            # 创建用户后自动同步到GitHub
-            if ok:
-                sync_ok, sync_msg = sync_excel.git_push(f'创建用户{data.get("username", "")}')
-                msg = msg + '（' + sync_msg + '）'
+            # 注：auth.create_user 内部已调用 save_users(push=True)，自动同步到 GitHub
             self.send_json({'success': ok, 'message': msg})
             return
 
@@ -1401,7 +1395,12 @@ window.CURRENT_USER = {user_info};
             save_data(all_data)
             # 自动同步到 Excel + GitHub
             sync_ok, sync_msg = sync_excel.full_sync(f'用户{user["username"]}增量同步')
-            self.send_json({'success': True, 'lastUpdate': all_data['lastUpdate'], 'syncMessage': sync_msg})
+            # 【修复】根据 full_sync 结果返回正确的 success 状态，不再掩盖失败
+            self.send_json({
+                'success': sync_ok,
+                'lastUpdate': all_data['lastUpdate'],
+                'syncMessage': sync_msg
+            })
             return
 
         # --- 全量保存（需 save 权限）---
@@ -1417,7 +1416,12 @@ window.CURRENT_USER = {user_info};
             save_data(all_data)
             # 自动同步到 Excel + GitHub
             sync_ok, sync_msg = sync_excel.full_sync(f'用户{user["username"]}全量保存')
-            self.send_json({'success': True, 'lastUpdate': all_data['lastUpdate'], 'syncMessage': sync_msg})
+            # 【修复】根据 full_sync 结果返回正确的 success 状态，不再掩盖失败
+            self.send_json({
+                'success': sync_ok,
+                'lastUpdate': all_data['lastUpdate'],
+                'syncMessage': sync_msg
+            })
             return
 
         # --- 同步到 Excel 并推送 GitHub（需 save 权限）---
@@ -1459,10 +1463,7 @@ window.CURRENT_USER = {user_info};
                 if k in data:
                     update_data[k] = data[k]
             ok, msg = auth.update_user(username, **update_data)
-            # 更新用户后自动同步到GitHub
-            if ok:
-                sync_ok, sync_msg = sync_excel.git_push(f'更新用户{username}')
-                msg = msg + '（' + sync_msg + '）'
+            # 注：auth.update_user 内部已调用 save_users(push=True)，自动同步到 GitHub
             self.send_json({'success': ok, 'message': msg})
             return
 
@@ -1479,10 +1480,7 @@ window.CURRENT_USER = {user_info};
                 return
             username = path[len('/api/user/'):]
             ok, msg = auth.delete_user(username)
-            # 删除用户后自动同步到GitHub
-            if ok:
-                sync_ok, sync_msg = sync_excel.git_push(f'删除用户{username}')
-                msg = msg + '（' + sync_msg + '）'
+            # 注：auth.delete_user 内部已调用 save_users(push=True)，自动同步到 GitHub
             self.send_json({'success': ok, 'message': msg})
             return
 

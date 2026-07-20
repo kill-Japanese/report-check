@@ -29,9 +29,17 @@ COL_DELETED = 21   # 第22列(V列)用于存放删除标志（软删除，避免
 # ==================== Git 操作 ====================
 
 def git_pull() -> tuple[bool, str]:
-    """从 GitHub 拉取最新数据，并恢复关键数据文件（用户管理.xlsx 等）
+    """从 GitHub 拉取最新数据，并强制恢复关键数据文件（用户管理.xlsx 等）
     
-    注意：只恢复数据文件，不会强制重置代码文件，避免丢失本地代码修改。
+    【严重修复】之前只在文件不存在时才从远程恢复，
+    但如果文件存在但是旧版本（或被意外修改），不会被更新。
+    现在对关键数据文件（用户管理.xlsx, 超声波户表脚本.xlsx）
+    强制用远程 origin/main 的最新版本覆盖，确保数据一致性。
+    
+    设计决策：对于数据文件，远程 GitHub 是唯一可信的持久化数据源。
+    如果本地有未提交的用户变更，说明之前的 push 失败了，
+    在重新部署场景下这些变更本就会丢失（容器重建），
+    所以强制用远程覆盖是最安全可靠的方案。
     """
     try:
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
@@ -45,8 +53,8 @@ def git_pull() -> tuple[bool, str]:
         if fetch.returncode != 0:
             return False, f'fetch失败: {fetch.stderr[:200]}'
 
-        # 2. 关键修复：从远程 origin/main 恢复数据文件（不影响代码文件）
-        #    即使 git pull 说 "Already up to date"，也能确保文件存在
+        # 2. 【严重修复】强制从远程 origin/main 恢复所有关键数据文件
+        #    无论文件是否存在，都用远程最新版本覆盖
         critical_files = [
             '用户管理.xlsx',
             '超声波户表脚本.xlsx',
@@ -54,14 +62,22 @@ def git_pull() -> tuple[bool, str]:
         restored = []
         for f in critical_files:
             fpath = os.path.join(BASE_DIR, f)
-            if not os.path.exists(fpath):
-                # 文件不存在，从远程恢复
-                checkout = subprocess.run(
-                    ['git', 'checkout', 'origin/main', '--', f],
-                    capture_output=True, text=True, cwd=BASE_DIR, timeout=10
-                )
-                if checkout.returncode == 0 and os.path.exists(fpath):
-                    restored.append(f)
+            existed_before = os.path.exists(fpath)
+
+            # 强制从远程恢复（覆盖本地）
+            checkout = subprocess.run(
+                ['git', 'checkout', 'origin/main', '--', f],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+            )
+            if checkout.returncode == 0 and os.path.exists(fpath):
+                if not existed_before:
+                    restored.append(f'{f}(新建)')
+                else:
+                    restored.append(f'{f}(已同步)')
+            else:
+                # checkout 失败可能是因为远程也没有这个文件
+                # 这种情况不报错，交给后续流程处理
+                pass
 
         # 3. 执行正常的 git pull（合并远程变更到本地）
         pull = subprocess.run(
@@ -72,7 +88,7 @@ def git_pull() -> tuple[bool, str]:
 
         msg_parts = ['拉取成功']
         if restored:
-            msg_parts.append(f'已恢复 {len(restored)} 个文件: {", ".join(restored)}')
+            msg_parts.append(f'已同步 {len(restored)} 个文件: {", ".join(restored)}')
         return True, '（' + '；'.join(msg_parts) + '）'
     except subprocess.TimeoutExpired:
         return False, '拉取超时'
@@ -80,11 +96,35 @@ def git_pull() -> tuple[bool, str]:
         return False, f'拉取失败: {str(e)}'
 
 def git_push(message: str = '同步数据') -> tuple[bool, str]:
-    """将变更提交并推送到 GitHub"""
+    """将变更提交并推送到 GitHub（带失败重试机制）
+    
+    修复：增加未推送 commit 检测和 push 失败回滚机制，
+         确保网络故障后可以重试推送。
+    """
     try:
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
-        
+
+        # ===== 修复：先检查是否有未推送的 commit =====
+        ahead = subprocess.run(
+            ['git', 'rev-list', '--count', 'origin/main..HEAD'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        try:
+            ahead_count = int(ahead.stdout.strip())
+        except ValueError:
+            ahead_count = 0
+
+        if ahead_count > 0:
+            # 有未推送的 commit，直接 push
+            push = subprocess.run(
+                ['git', 'push', 'origin', 'main'],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+            )
+            if push.returncode != 0:
+                return False, f'推送失败（重试 {ahead_count} 个待推送提交）: {push.stderr[:200]}'
+            return True, f'已推送 {ahead_count} 个待提交到 GitHub'
+
         # 检查是否有变更
         result = subprocess.run(
             ['git', 'status', '--porcelain'],
@@ -92,16 +132,29 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
         )
         if not result.stdout.strip():
             return True, '无变更，无需推送'
-        
+
         subprocess.run(['git', 'add', '-A'], capture_output=True, cwd=BASE_DIR, timeout=10)
         commit_msg = f'[数据同步] {message} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
-        subprocess.run(['git', 'commit', '-m', commit_msg], capture_output=True, cwd=BASE_DIR, timeout=10)
+        commit_result = subprocess.run(
+            ['git', 'commit', '-m', commit_msg],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        if commit_result.returncode != 0:
+            if 'nothing to commit' in (commit_result.stdout + commit_result.stderr):
+                return True, '无变更'
+            return False, f'提交失败: {commit_result.stderr[:200]}'
+
         push_result = subprocess.run(
             ['git', 'push', 'origin', 'main'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         if push_result.returncode != 0:
-            return False, f'推送失败: {push_result.stderr[:200]}'
+            # push 失败，撤销 commit，保留工作区变更以便重试
+            subprocess.run(
+                ['git', 'reset', '--soft', 'HEAD~1'],
+                capture_output=True, cwd=BASE_DIR, timeout=10
+            )
+            return False, f'推送失败（已撤销本地提交，可重试）: {push_result.stderr[:200]}'
         return True, '已同步到 GitHub'
     except subprocess.TimeoutExpired:
         return False, '同步超时'
@@ -315,26 +368,42 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
         # ============== 1. 先处理归档（不改变行号） ==============
         archived = collab.get('archived', {})
         
-        # 先清空所有已有的归档标志
-        for p in existing_projects:
-            row_num = id_to_excel_row.get(p['id'])
-            if row_num:
-                ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='')
-        
-        # 再写入新的归档标志
+        # 构建需要归档的行号集合
+        archived_rows = set()
         if archived:
             for pid, arch_info in archived.items():
-                # pid 可能是整数或字符串
                 try:
                     pid_int = int(pid)
                 except:
                     pid_int = pid
-                
                 row_num = id_to_excel_row.get(pid_int) or id_to_excel_row.get(str(pid_int))
                 if row_num and arch_info:
+                    archived_rows.add(row_num)
+        
+        # 【修复】只处理需要变更的行，不盲目清空所有行的U列（避免覆盖原有公式）
+        # - 需要归档的行：写入"已归档"
+        # - 不需要归档但当前U列是"已归档"的行：清空（恢复）
+        # - 其他行（原有公式）：不做任何修改
+        for p in existing_projects:
+            row_num = id_to_excel_row.get(p['id'])
+            if not row_num:
+                continue
+            
+            current_val = ws.cell(row=row_num, column=COL_ARCHIVED + 1).value
+            is_current_archived = (str(current_val).strip() == '已归档') if current_val else False
+            
+            if row_num in archived_rows:
+                # 需要归档
+                if not is_current_archived:
                     ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='已归档')
                     changes += 1
                     print(f"   📦 归档: Excel第{row_num}行")
+            else:
+                # 不需要归档：只有之前被标记为"已归档"的才清空，保留原有公式
+                if is_current_archived:
+                    ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='')
+                    changes += 1
+                    print(f"   📤 取消归档: Excel第{row_num}行")
         
         # ============== 1.5. 处理编辑（localEdits）- 不改变行号，在删除前应用 ==============
         # 字段名到Excel列号的映射（1-based）
@@ -431,9 +500,21 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
         new_projects = collab.get('newProjects', [])
         
         if new_projects:
+            # 【修复】构建 Excel 中已有的项目集合，防止重复添加
+            # （当 git_push 失败后重试时，协作数据未被清空，需要去重）
+            existing_set = set()
+            for p in existing_projects:
+                key = (str(p.get('项目', '')).strip(), str(p.get('资源名称', '')).strip())
+                existing_set.add(key)
+            
             last_row = ws.max_row
             
             for np in new_projects:
+                # 去重检查：项目名+资源名称完全一致则跳过
+                np_key = (str(np.get('项目', '')).strip(), str(np.get('资源名称', '')).strip())
+                if np_key in existing_set:
+                    print(f"   ⏭️  跳过重复新增: {np_key[0]} / {np_key[1]}")
+                    continue
                 last_row += 1
                 
                 # 列5: 部门（列E=5）
@@ -506,9 +587,13 @@ def full_sync(operation: str = '未知操作') -> tuple[bool, str]:
     """
     执行完整同步流程：
     1. 将协作数据应用到 Excel
-    2. 清空已处理的协作数据（已写入 Excel 的部分）—— 关键：步骤1成功后立即清空，防止重复
-    3. 重新生成报表
-    4. 推送到 GitHub
+    2. 重新生成报表
+    3. 推送到 GitHub
+    4. 【关键修复】只有推送成功后才清空协作数据，防止推送失败时数据丢失
+    
+    返回: (整体是否成功, 消息)
+    - 只有 Excel写入+报表生成+Git推送 全部成功才返回 True
+    - 任何一步失败都返回 False，协作数据保留以便下次重试
     """
     messages = []
     
@@ -519,8 +604,23 @@ def full_sync(operation: str = '未知操作') -> tuple[bool, str]:
         return False, '; '.join(messages)
     
     if changes > 0:
-        # 步骤2（立即执行！）: 清空已写入 Excel 的协作数据，防止下次重复应用
-        # 即使后续步骤失败，数据已经在 Excel 中了，不清空会导致重复
+        # 步骤2: 重新生成报表
+        ok, msg = regenerate_report()
+        messages.append(msg)
+        if not ok:
+            # 报表生成失败但数据已在Excel中，保留协作数据以便下次重试
+            messages.append('警告：报表生成失败，协作数据保留待重试')
+            return False, '；'.join(messages)
+        
+        # 步骤3: 推送到 GitHub
+        push_ok, push_msg = git_push(f'{operation}，{changes}项变更')
+        messages.append(push_msg)
+        if not push_ok:
+            # 【关键修复】推送失败时不清空协作数据，保留以便下次重试
+            messages.append('错误：GitHub推送失败，协作数据已保留待重试（请勿重启服务器！）')
+            return False, '；'.join(messages)
+        
+        # 【关键修复】只有推送成功后才清空协作数据
         collab = load_collab_data()
         collab['newProjects'] = []
         collab['deletedIds'] = []
@@ -529,24 +629,41 @@ def full_sync(operation: str = '未知操作') -> tuple[bool, str]:
         collab['notes'] = {}
         collab['checked'] = {}
         save_collab_data(collab)
-        
-        # 步骤3: 重新生成报表
-        ok, msg = regenerate_report()
-        messages.append(msg)
-        if not ok:
-            # 报表生成失败但数据已在Excel中，不算完全失败
-            messages.append('警告：报表生成失败，但数据已写入Excel')
-            return True, '；'.join(messages)
-        
-        # 步骤4: 推送到 GitHub
-        ok, msg = git_push(f'{operation}，{changes}项变更')
-        messages.append(msg)
-        if not ok:
-            # 推送失败但数据已在本地Excel中
-            messages.append('警告：GitHub推送失败，但数据已写入本地Excel')
-            return True, '；'.join(messages)
     else:
-        messages.append('无需要同步的变更')
+        # 【修复】changes=0 但协作数据不为空时，说明是重试场景
+        # （Excel已被修改但上次推送失败，协作数据还保留着）
+        # 直接检查是否有未提交的变更并尝试推送
+        collab = load_collab_data()
+        has_pending = (
+            collab.get('newProjects') or 
+            collab.get('deletedIds') or 
+            collab.get('archived') or 
+            collab.get('localEdits')
+        )
+        if has_pending:
+            messages.append('检测到待推送的协作数据（重试场景）')
+            # 重新生成报表（确保报表是最新的）
+            ok, msg = regenerate_report()
+            messages.append(msg)
+            if not ok:
+                messages.append('警告：报表生成失败')
+                return False, '；'.join(messages)
+            # 尝试推送
+            push_ok, push_msg = git_push(f'{operation}，重试推送')
+            messages.append(push_msg)
+            if not push_ok:
+                messages.append('错误：GitHub推送失败，协作数据已保留待重试')
+                return False, '；'.join(messages)
+            # 推送成功，清空协作数据
+            collab['newProjects'] = []
+            collab['deletedIds'] = []
+            collab['archived'] = {}
+            collab['localEdits'] = {}
+            collab['notes'] = {}
+            collab['checked'] = {}
+            save_collab_data(collab)
+        else:
+            messages.append('无需要同步的变更')
     
     return True, '；'.join(messages)
 
