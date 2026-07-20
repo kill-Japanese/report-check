@@ -221,6 +221,61 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
                     changes += 1
                     print(f"   📦 归档: Excel第{row_num}行")
         
+        # ============== 1.5. 处理编辑（localEdits）- 不改变行号，在删除前应用 ==============
+        # 字段名到Excel列号的映射（1-based）
+        FIELD_TO_COLUMN = {
+            '部门': 5,           # E列
+            '项目': 6,           # F列
+            '项目开始时间': 7,   # G列
+            '项目结束时间': 8,   # H列
+            '项目描述': 9,       # I列
+            '资源类型': 10,      # J列
+            '资源名称': 11,      # K列
+            '资源开始时间': 12,  # L列
+            '资源结束时间': 13,  # M列
+            '日平均工时': 14,    # N列
+        }
+        
+        local_edits = collab.get('localEdits', {})
+        if local_edits:
+            # 先构建要删除的ID集合，跳过已删除项目的编辑
+            deleted_ids_for_edit = set()
+            for did in collab.get('deletedIds', []):
+                try:
+                    deleted_ids_for_edit.add(int(did))
+                except:
+                    deleted_ids_for_edit.add(did)
+                    deleted_ids_for_edit.add(str(did))
+            
+            for pid, edits in local_edits.items():
+                # pid 可能是整数或字符串
+                try:
+                    pid_int = int(pid)
+                except:
+                    pid_int = pid
+                
+                # 跳过已删除项目的编辑
+                if pid_int in deleted_ids_for_edit or str(pid_int) in deleted_ids_for_edit:
+                    continue
+                
+                row_num = id_to_excel_row.get(pid_int) or id_to_excel_row.get(str(pid_int))
+                if not row_num:
+                    continue
+                
+                if not isinstance(edits, dict):
+                    continue
+                
+                for field, value in edits.items():
+                    col = FIELD_TO_COLUMN.get(field)
+                    if col:
+                        # 跳过空日期值
+                        if field in ('项目开始时间', '项目结束时间', '资源开始时间', '资源结束时间'):
+                            if not value or value in ['', '1900-01-01', '2100-01-01']:
+                                continue
+                        ws.cell(row=row_num, column=col, value=value)
+                        changes += 1
+                        print(f"   ✏️  编辑: Excel第{row_num}行, {field}={value}")
+        
         # ============== 2. 再处理删除（从大到小删除，避免行号漂移） ==============
         deleted_ids = set()
         for did in collab.get('deletedIds', []):
@@ -291,11 +346,6 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
     except Exception as e:
         return False, f'写入 Excel 失败: {str(e)}', changes
     
-    # 处理编辑（localEdits）- 计入变更数
-    local_edits = collab.get('localEdits', {})
-    if local_edits:
-        changes += len(local_edits)
-    
     return True, f'已应用 {changes} 项变更到 Excel', changes
 
 def regenerate_report() -> tuple[bool, str]:
@@ -320,41 +370,45 @@ def full_sync(operation: str = '未知操作') -> tuple[bool, str]:
     """
     执行完整同步流程：
     1. 将协作数据应用到 Excel
-    2. 重新生成报表
-    3. 推送到 GitHub
-    4. 清空已处理的协作数据（已写入 Excel 的部分）
+    2. 清空已处理的协作数据（已写入 Excel 的部分）—— 关键：步骤1成功后立即清空，防止重复
+    3. 重新生成报表
+    4. 推送到 GitHub
     """
     messages = []
     
-    # 步骤1: 应用协作数据到 Excel
+    # 步骤1: 应用协作数据到 Excel（最关键的一步）
     ok, msg, changes = apply_collab_to_excel()
     messages.append(msg)
     if not ok:
         return False, '; '.join(messages)
     
     if changes > 0:
-        # 步骤2: 重新生成报表
+        # 步骤2（立即执行！）: 清空已写入 Excel 的协作数据，防止下次重复应用
+        # 即使后续步骤失败，数据已经在 Excel 中了，不清空会导致重复
+        collab = load_collab_data()
+        collab['newProjects'] = []
+        collab['deletedIds'] = []
+        collab['archived'] = {}
+        collab['localEdits'] = {}
+        collab['notes'] = {}
+        collab['checked'] = {}
+        save_collab_data(collab)
+        
+        # 步骤3: 重新生成报表
         ok, msg = regenerate_report()
         messages.append(msg)
         if not ok:
-            return False, '; '.join(messages)
+            # 报表生成失败但数据已在Excel中，不算完全失败
+            messages.append('警告：报表生成失败，但数据已写入Excel')
+            return True, '；'.join(messages)
         
-        # 步骤3: 推送到 GitHub
+        # 步骤4: 推送到 GitHub
         ok, msg = git_push(f'{operation}，{changes}项变更')
         messages.append(msg)
         if not ok:
-            return False, '; '.join(messages)
-        
-        # 步骤4: 清空已写入 Excel 的协作数据（已持久化到Excel，避免下次重复应用）
-        collab = load_collab_data()
-        # 已写入Excel的：新项目、删除ID、归档标志
-        if collab.get('newProjects'):
-            collab['newProjects'] = []
-        if collab.get('deletedIds'):
-            collab['deletedIds'] = []
-        if collab.get('archived'):
-            collab['archived'] = {}
-        save_collab_data(collab)
+            # 推送失败但数据已在本地Excel中
+            messages.append('警告：GitHub推送失败，但数据已写入本地Excel')
+            return True, '；'.join(messages)
     else:
         messages.append('无需要同步的变更')
     

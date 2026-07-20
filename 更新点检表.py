@@ -1207,10 +1207,24 @@ let deletedIds = JSON.parse(localStorage.getItem('deletedIds') || '[]');
 let customEmails = JSON.parse(localStorage.getItem('customEmails') || '{}');
 let newProjects = JSON.parse(localStorage.getItem('newProjects') || '[]');
 
-// 将本地编辑中新增的项目合并到原始数据中（页面刷新后恢复新增项目）
+// 将本地新增的项目合并到原始数据中（页面刷新后恢复新增项目）
 function mergeLocalNewProjects() {
   const existingIds = new Set(RAW_DATA.allProjects.map(p => p.id));
   let addedCount = 0;
+
+  // 1. 从 newProjects（新增项目专用数组）恢复
+  newProjects.forEach(np => {
+    if (!existingIds.has(np.id)) {
+      RAW_DATA.allProjects.push(np);
+      const dept = np.部门 || '未分配';
+      if (!RAW_DATA.depts[dept]) RAW_DATA.depts[dept] = [];
+      RAW_DATA.depts[dept].push(np);
+      existingIds.add(np.id);
+      addedCount++;
+    }
+  });
+
+  // 2. 从 localEdits 中恢复（兼容旧数据，只恢复完整的新增项目，不恢复局部编辑）
   Object.keys(localEdits).forEach(id => {
     const numId = parseInt(id);
     if (!existingIds.has(numId)) {
@@ -1225,6 +1239,7 @@ function mergeLocalNewProjects() {
       }
     }
   });
+
   if (addedCount > 0) {
     console.log(`已从本地存储恢复 ${addedCount} 个新增项目`);
   }
@@ -4105,10 +4120,8 @@ function submitNewProject() {
     RAW_DATA.delayedProjects.push(newProject);
   }
   
-  // 保存到本地
-  localEdits[newId] = newProject;
+  // 保存到本地（新项目只存到 newProjects，不存到 localEdits，避免重复）
   newProjects.push(newProject);
-  localStorage.setItem('projectEdits', JSON.stringify(localEdits));
   localStorage.setItem('newProjects', JSON.stringify(newProjects));
   
   updateStats();
