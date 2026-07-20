@@ -47,9 +47,10 @@ def find_source_file():
     """自动查找数据源文件：优先级从高到低
     1. 命令行参数
     2. data_source.json（Skill 记录的数据源）
-    3. .uploads 目录下最新的"超声波户表脚本"文件
-    4. .uploads 目录下最新的 xlsx 文件
-    5. 当前目录下最新的 xlsx 文件
+    3. 当前目录下的 超声波户表脚本.xlsx（GitHub 源文件，数据之源）
+    4. .uploads 目录下最新的"超声波户表脚本"文件
+    5. .uploads 目录下最新的 xlsx 文件
+    6. 当前目录下最新的 xlsx 文件
     """
     import json
     
@@ -76,7 +77,12 @@ def find_source_file():
         except Exception:
             pass  # 读取失败则忽略，继续往下找
     
-    # 3. .uploads 目录下的 xlsx 文件
+    # 3. 当前目录下的 超声波户表脚本.xlsx（GitHub 源文件，最高优先级）
+    github_source = os.path.join(os.path.dirname(os.path.abspath(__file__)), '超声波户表脚本.xlsx')
+    if os.path.exists(github_source):
+        return github_source, 'GitHub源文件(超声波户表脚本.xlsx)'
+    
+    # 4. .uploads 目录下的 xlsx 文件
     upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.uploads')
     if os.path.isdir(upload_dir):
         xlsx_files = glob.glob(os.path.join(upload_dir, '*.xlsx'))
@@ -90,7 +96,7 @@ def find_source_file():
             latest = max(xlsx_files, key=os.path.getmtime)
             return latest, '自动检测(.uploads最新)'
     
-    # 3. 当前目录下的 xlsx 文件（排除输出文件）
+    # 5. 当前目录下的 xlsx 文件（排除输出文件）
     current_dir = os.path.dirname(os.path.abspath(__file__))
     xlsx_files = glob.glob(os.path.join(current_dir, '*.xlsx'))
     xlsx_files = [f for f in xlsx_files if os.path.basename(f) != OUTPUT_EXCEL]
@@ -208,6 +214,12 @@ for idx in range(3, len(df)):
         proj_days = calc_days(current_end, True)
         res_days = calc_days(res_end, True)
         
+        # 读取归档标志（第21列，U列）
+        archived_flag = ''
+        if 20 < len(row) and pd.notna(row[20]):
+            archived_flag = str(row[20]).strip()
+        is_archived = archived_flag in ('已归档', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y')
+        
         # 跳过空行：没有资源类型和资源名称的行不处理
         has_resource = resource_type.strip() or resource_name.strip()
         if has_resource:
@@ -224,47 +236,84 @@ for idx in range(3, len(df)):
             '资源开始时间': fmt_date(res_start, True),
             '资源结束时间': fmt_date(res_end, False),
             '资源剩余天数': res_days,
-                '日平均工时': hours if hours else 0
+                '日平均工时': hours if hours else 0,
+                '已归档': is_archived,
             })
 
 print(f"✅ 提取到 {len(projects)} 条资源记录")
 
-# ==================== 2.5 加载HTML端新增的项目 ====================
+# ==================== 2.5 加载协作数据（新增/删除/归档）====================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+COLLAB_FILE = os.path.join(BASE_DIR, 'data', '协作数据.json')
+collab_data = {
+    'newProjects': [], 'deletedIds': [], 'archived': {},
+    'localEdits': {}, 'notes': {}, 'checked': {}, 'customEmails': {}
+}
+if os.path.exists(COLLAB_FILE):
+    try:
+        with open(COLLAB_FILE, 'r', encoding='utf-8') as f:
+            collab_data.update(json.load(f))
+        print(f"📂 已加载协作数据: 新增{len(collab_data.get('newProjects', []))}条, "
+              f"删除{len(collab_data.get('deletedIds', []))}条, "
+              f"归档{len(collab_data.get('archived', {}))}条")
+    except Exception as e:
+        print(f"⚠️  加载协作数据失败: {e}")
+
+# 应用删除
+deleted_ids = set(collab_data.get('deletedIds', []))
+if deleted_ids:
+    before = len(projects)
+    projects = [p for p in projects if str(p['id']) not in deleted_ids and p['id'] not in deleted_ids]
+    print(f"🗑️  已过滤删除的项目: {before - len(projects)} 条")
+
+# 加载新增项目（从协作数据 + html_new_projects.json）
 NEW_PROJECTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'html_new_projects.json')
+all_new_projects = list(collab_data.get('newProjects', []))
+
 if os.path.exists(NEW_PROJECTS_FILE):
     try:
         with open(NEW_PROJECTS_FILE, 'r', encoding='utf-8') as f:
-            new_projects_data = json.load(f)
-        if isinstance(new_projects_data, list) and len(new_projects_data) > 0:
-            new_id_start = max([p['id'] for p in projects]) + 1 if projects else 1
-            for np in new_projects_data:
-                np['id'] = new_id_start
-                # 重新计算剩余天数
-                if np.get('资源结束时间'):
-                    try:
-                        res_end = datetime.strptime(np['资源结束时间'], '%Y-%m-%d')
-                        np['资源剩余天数'] = (res_end - today).days
-                    except:
-                        np['资源剩余天数'] = None
-                if np.get('项目结束时间') and np['项目结束时间'] not in ['2100-01-01', '']:
-                    try:
-                        proj_end = datetime.strptime(np['项目结束时间'], '%Y-%m-%d')
-                        np['项目剩余天数'] = (proj_end - today).days
-                    except:
-                        np['项目剩余天数'] = None
-                projects.append(np)
-                new_id_start += 1
-            print(f"📥 已从HTML同步 {len(new_projects_data)} 条新增项目")
+            html_new = json.load(f)
+        if isinstance(html_new, list):
+            existing_ids = {p.get('id') for p in all_new_projects}
+            for np in html_new:
+                if np.get('id') not in existing_ids:
+                    all_new_projects.append(np)
     except Exception as e:
         print(f"⚠️  加载HTML新增项目失败: {e}")
 
-# ==================== 3. 分类统计 ====================
+if all_new_projects:
+    new_id_start = max([p['id'] for p in projects]) + 1 if projects else 10000
+    for np in all_new_projects:
+        if np.get('id') is None or not any(p['id'] == np.get('id') for p in projects):
+            np['id'] = new_id_start
+            # 重新计算剩余天数
+            if np.get('资源结束时间'):
+                try:
+                    res_end = datetime.strptime(np['资源结束时间'], '%Y-%m-%d')
+                    np['资源剩余天数'] = (res_end - today).days
+                except:
+                    np['资源剩余天数'] = None
+            if np.get('项目结束时间') and str(np['项目结束时间']) not in ['2100-01-01', '']:
+                try:
+                    proj_end = datetime.strptime(str(np['项目结束时间']), '%Y-%m-%d')
+                    np['项目剩余天数'] = (proj_end - today).days
+                except:
+                    np['项目剩余天数'] = None
+            projects.append(np)
+            new_id_start += 1
+    print(f"📥 已加载 {len(all_new_projects)} 条新增项目")
+
+# ==================== 3. 分类统计（排除已归档项目）====================
+# 过滤出未归档的项目用于统计
+active_projects = [p for p in projects if not p.get('已归档', False)]
+
 # 统一规则：优先使用资源结束时间，没有则使用项目结束时间（与前端 recalcDays 保持一致）
 def get_effective_days(p):
     return p['资源剩余天数'] if p['资源剩余天数'] is not None else p['项目剩余天数']
 
 delayed_projects = []
-for p in projects:
+for p in active_projects:
     days = get_effective_days(p)
     if days is not None and days <= 3:
         delayed_projects.append(p)
@@ -274,15 +323,15 @@ delayed_projects.sort(key=lambda x: (
 ))
 
 depts = {}
-for p in projects:
+for p in active_projects:
     d = p['部门'] or '未分配'
     depts.setdefault(d, []).append(p)
 
 stats = {
-    'total': len(projects),
-    'delayed': len([p for p in projects if get_effective_days(p) is not None and get_effective_days(p) < 0]),
-    'urgent': len([p for p in projects if get_effective_days(p) is not None and 0 <= get_effective_days(p) <= 3]),
-    'warning': len([p for p in projects if get_effective_days(p) is not None and 3 < get_effective_days(p) <= 7]),
+    'total': len(active_projects),
+    'delayed': len([p for p in active_projects if get_effective_days(p) is not None and get_effective_days(p) < 0]),
+    'urgent': len([p for p in active_projects if get_effective_days(p) is not None and 0 <= get_effective_days(p) <= 3]),
+    'warning': len([p for p in active_projects if get_effective_days(p) is not None and 3 < get_effective_days(p) <= 7]),
 }
 
 data_json = {

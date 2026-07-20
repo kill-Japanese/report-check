@@ -20,11 +20,14 @@ import urllib.parse
 import urllib.request
 import urllib.error
 import secrets
+import threading
+import time
 from datetime import datetime
 
-# 导入认证模块
+# 导入认证模块和同步模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import auth
+import sync_excel
 
 # ==================== 配置 ====================
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
@@ -53,6 +56,7 @@ def load_data():
     return {
         'localEdits': {}, 'notes': {}, 'checked': {},
         'archived': {}, 'customEmails': {}, 'newProjects': [],
+        'deletedIds': [],
         'lastUpdate': datetime.now().isoformat()
     }
 
@@ -539,19 +543,21 @@ form.addEventListener('submit', async (e) => {
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password }),
+      credentials: 'same-origin'
     });
     const data = await res.json();
     if (data.success) {
-      if (data.must_change_pwd) {
-        alert('首次登录请修改密码！');
-      }
-      window.location.reload();
+      console.log('登录成功，正在跳转...');
+      // 直接跳转，不要用 alert 阻塞！
+      // （首页会自动检测 must_change_pwd 并弹出改密码对话框）
+      window.location.replace('/');
     } else {
       errorEl.textContent = data.message || '登录失败';
       errorEl.classList.add('show');
     }
   } catch (err) {
+    console.error('登录错误:', err);
     errorEl.textContent = '网络错误，请重试';
     errorEl.classList.add('show');
   }
@@ -912,15 +918,45 @@ class SecureCollaborationHandler(http.server.SimpleHTTPRequestHandler):
         return auth.get_user(session['username'])
 
     def set_session_cookie(self, session_id: str):
-        """设置 Session Cookie"""
-        self.send_header(
-            'Set-Cookie',
-            f'session_id={session_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age={auth.SESSION_TIMEOUT}'
+        """设置 Session Cookie（兼容 Chrome/Safari/Edge/Render HTTPS）"""
+        # 检测是否 HTTPS（通过代理头、Render 环境变量、端口）
+        is_https = False
+        if self.headers.get('X-Forwarded-Proto', '').lower() == 'https':
+            is_https = True
+        elif self.headers.get('X-Forwarded-Ssl', '').lower() == 'on':
+            is_https = True
+        elif os.environ.get('RENDER') or os.environ.get('DYNO'):
+            # Render / Heroku 等 PaaS 平台默认 HTTPS
+            is_https = True
+        
+        secure_flag = '; Secure' if is_https else ''
+        # Chrome 80+ 要求：Secure 的 Cookie 必须 SameSite=None 或 Lax
+        # 但 SameSite=None 必须配合 Secure，所以 HTTPS 下用 None，HTTP 下用 Lax
+        samesite_flag = 'None' if is_https else 'Lax'
+        cookie = (
+            f'session_id={session_id}; '
+            f'Path=/; '
+            f'HttpOnly; '
+            f'SameSite={samesite_flag}; '
+            f'Max-Age={auth.SESSION_TIMEOUT}'
+            f'{secure_flag}'
         )
+        self.send_header('Set-Cookie', cookie)
 
     def clear_session_cookie(self):
         """清除 Session Cookie"""
-        self.send_header('Set-Cookie', 'session_id=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0')
+        # 与 set_session_cookie 保持一致的 SameSite 和 Secure 设置
+        is_https = False
+        if self.headers.get('X-Forwarded-Proto', '').lower() == 'https':
+            is_https = True
+        elif os.environ.get('RENDER') or os.environ.get('DYNO'):
+            is_https = True
+        secure_flag = '; Secure' if is_https else ''
+        samesite_flag = 'None' if is_https else 'Lax'
+        self.send_header(
+            'Set-Cookie',
+            f'session_id=; Path=/; HttpOnly; SameSite={samesite_flag}; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT{secure_flag}'
+        )
 
     def send_json(self, data, status=200):
         self.send_response(status)
@@ -1319,6 +1355,10 @@ window.CURRENT_USER = {user_info};
             old_pwd = data.get('old_password', '')
             new_pwd = data.get('new_password', '')
             ok, msg = auth.change_password(user['username'], old_pwd, new_pwd)
+            # 修改密码后自动同步到GitHub（持久化 must_change_pwd=False）
+            if ok:
+                sync_ok, sync_msg = sync_excel.git_push(f'用户{user["username"]}修改密码')
+                msg = msg + '（' + sync_msg + '）'
             self.send_json({'success': ok, 'message': msg})
             return
 
@@ -1332,6 +1372,10 @@ window.CURRENT_USER = {user_info};
                 data.get('role', 'viewer'),
                 data.get('email', '')
             )
+            # 创建用户后自动同步到GitHub
+            if ok:
+                sync_ok, sync_msg = sync_excel.git_push(f'创建用户{data.get("username", "")}')
+                msg = msg + '（' + sync_msg + '）'
             self.send_json({'success': ok, 'message': msg})
             return
 
@@ -1348,10 +1392,16 @@ window.CURRENT_USER = {user_info};
                 for p in data['newProjects']:
                     if p.get('id') not in existing_ids:
                         all_data['newProjects'].append(p)
+            if 'deletedIds' in data:
+                for did in data['deletedIds']:
+                    if did not in all_data['deletedIds']:
+                        all_data['deletedIds'].append(did)
             user = self.get_current_user()
             auth._audit_log('DATA_SYNC', user['username'], '数据同步更新')
             save_data(all_data)
-            self.send_json({'success': True, 'lastUpdate': all_data['lastUpdate']})
+            # 自动同步到 Excel + GitHub
+            sync_ok, sync_msg = sync_excel.full_sync(f'用户{user["username"]}增量同步')
+            self.send_json({'success': True, 'lastUpdate': all_data['lastUpdate'], 'syncMessage': sync_msg})
             return
 
         # --- 全量保存（需 save 权限）---
@@ -1359,13 +1409,36 @@ window.CURRENT_USER = {user_info};
             if not self.require_permission('save'):
                 return
             all_data = load_data()
-            for key in ['localEdits', 'notes', 'checked', 'archived', 'customEmails', 'newProjects']:
+            for key in ['localEdits', 'notes', 'checked', 'archived', 'customEmails', 'newProjects', 'deletedIds']:
                 if key in data:
                     all_data[key] = data[key]
             user = self.get_current_user()
             auth._audit_log('DATA_SAVE', user['username'], '全量数据保存')
             save_data(all_data)
-            self.send_json({'success': True, 'lastUpdate': all_data['lastUpdate']})
+            # 自动同步到 Excel + GitHub
+            sync_ok, sync_msg = sync_excel.full_sync(f'用户{user["username"]}全量保存')
+            self.send_json({'success': True, 'lastUpdate': all_data['lastUpdate'], 'syncMessage': sync_msg})
+            return
+
+        # --- 同步到 Excel 并推送 GitHub（需 save 权限）---
+        if path == '/api/sync-excel':
+            if not self.require_permission('save'):
+                return
+            user = self.get_current_user()
+            auth._audit_log('SYNC_TO_EXCEL', user['username'], '同步数据到Excel并推送GitHub')
+            op_desc = '用户' + user['username'] + '触发同步'
+            ok, msg = sync_excel.full_sync(op_desc)
+            self.send_json({'success': ok, 'message': msg})
+            return
+
+        # --- 从 GitHub 拉取最新数据（需 save 权限）---
+        if path == '/api/pull-github':
+            if not self.require_permission('save'):
+                return
+            user = self.get_current_user()
+            auth._audit_log('PULL_GITHUB', user['username'], '从GitHub拉取最新数据')
+            ok, msg = sync_excel.startup_sync()
+            self.send_json({'success': ok, 'message': msg})
             return
 
         self.send_json({'error': 'Unknown endpoint'}, 404)
@@ -1386,6 +1459,10 @@ window.CURRENT_USER = {user_info};
                 if k in data:
                     update_data[k] = data[k]
             ok, msg = auth.update_user(username, **update_data)
+            # 更新用户后自动同步到GitHub
+            if ok:
+                sync_ok, sync_msg = sync_excel.git_push(f'更新用户{username}')
+                msg = msg + '（' + sync_msg + '）'
             self.send_json({'success': ok, 'message': msg})
             return
 
@@ -1402,6 +1479,10 @@ window.CURRENT_USER = {user_info};
                 return
             username = path[len('/api/user/'):]
             ok, msg = auth.delete_user(username)
+            # 删除用户后自动同步到GitHub
+            if ok:
+                sync_ok, sync_msg = sync_excel.git_push(f'删除用户{username}')
+                msg = msg + '（' + sync_msg + '）'
             self.send_json({'success': ok, 'message': msg})
             return
 
@@ -1482,14 +1563,70 @@ window.CURRENT_USER = {user_info};
 
 
 # ==================== 启动服务器 ====================
+
+# 定时同步线程标志
+_auto_pull_running = True
+_auto_pull_thread = None
+_last_pull_hash = None
+
+def _auto_pull_worker(interval_seconds: int):
+    """后台线程：定期从 GitHub 拉取最新数据"""
+    global _last_pull_hash
+    while _auto_pull_running:
+        try:
+            # 拉取最新
+            ok, msg = sync_excel.git_pull()
+            if ok:
+                # 检查Excel是否有变化（通过文件修改时间）
+                excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
+                if os.path.exists(excel_path):
+                    current_mtime = os.path.getmtime(excel_path)
+                    if _last_pull_hash is None or current_mtime != _last_pull_hash:
+                        _last_pull_hash = current_mtime
+                        # Excel有变化，重新生成报表
+                        ok2, msg2 = sync_excel.regenerate_report()
+                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🔄 GitHub数据已更新: {msg2}")
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚠️  自动拉取异常: {e}")
+        
+        # 等待下一轮
+        for _ in range(interval_seconds):
+            if not _auto_pull_running:
+                break
+            time.sleep(1)
+
+def start_auto_pull(interval_seconds: int = 300):
+    """启动自动拉取线程"""
+    global _auto_pull_thread
+    if _auto_pull_thread and _auto_pull_thread.is_alive():
+        return
+    _auto_pull_running = True
+    _auto_pull_thread = threading.Thread(
+        target=_auto_pull_worker,
+        args=(interval_seconds,),
+        daemon=True,
+        name='AutoPullThread'
+    )
+    _auto_pull_thread.start()
+    print(f"🔄 已启用自动从GitHub拉取（每{interval_seconds//60}分钟）")
+
+
 def main():
     os.chdir(BASE_DIR)
     auth.init_auth()
     # 启动自动同步到 GitHub（每5分钟）
     auth.auto_sync_periodically(300)
+    
+    # 启动自动从 GitHub 拉取（每5分钟）
+    start_auto_pull(300)
 
     if not os.path.exists(DATA_FILE):
         save_data(load_data())
+
+    # ========== 启动时同步：从 GitHub 拉取最新并生成报表 ==========
+    print("🔄 正在从 GitHub 拉取最新数据...")
+    sync_ok, sync_msg = sync_excel.startup_sync()
+    print(f"   {sync_msg}")
 
     # 自动生成报表（如果Excel存在但HTML不存在，或HTML为空）
     excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
@@ -1537,7 +1674,8 @@ def main():
     print()
     print("✅ 已启用: 登录认证 · 角色权限 · Session 管理")
     print("✅ 已启用: 登录限流 · CSRF 防护 · 操作审计")
-    print("✅ 已启用: GitHub 数据持久化（每5分钟自动同步）")
+    print("✅ 已启用: GitHub 数据持久化（每5分钟自动推拉同步）")
+    print("✅ 已启用: GitHub 自动拉取（Excel修改后自动更新报表）")
     print()
     print("🌐 访问地址：")
     print(f"   本机访问: http://localhost:{PORT}")
