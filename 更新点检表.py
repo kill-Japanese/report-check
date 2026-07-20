@@ -1658,8 +1658,7 @@ function updateStats() {
   document.getElementById('statWarning').textContent = warning;
   document.getElementById('statTotal').textContent = active.length;
   
-  // Tab计数（排除归档）
-  const active = all.filter(p => !archived[p.id]);
+  // Tab计数（排除归档，复用上面的 active）
   const delayedCount = active.filter(p => {
     const d = recalcDays(p);
     return d !== null && d <= 3;
