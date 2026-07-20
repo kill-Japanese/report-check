@@ -1,0 +1,5 @@
+[2026-07-20 10:34:13] USER_CREATE | 用户: system | 创建默认管理员 admin / admin123
+[2026-07-20 10:34:22] USER_CREATE | 用户: system | 创建默认管理员 admin / admin123
+[2026-07-20 10:35:49] USER_CREATE | 用户: system | 创建默认管理员 admin / admin123
+[2026-07-20 10:36:07] LOGIN | 用户: admin | 登录成功
+[2026-07-20 10:36:16] REPORT_GENERATE | 用户: admin | 使用仓库默认 Excel 生成报表

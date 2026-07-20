@@ -1,0 +1,17 @@
+{
+  "admin": {
+    "username": "admin",
+    "password": {
+      "hash": "987ef9926e732fbc1add54a6d0d4db947fc8a64a905d8a8339e6af14f0095a27",
+      "salt": "fbccb78b07b97e0d864750d107f110a642510923afc250236d20e0b26f51ffbc",
+      "iterations": 200000,
+      "algorithm": "PBKDF2-HMAC-SHA256"
+    },
+    "role": "admin",
+    "email": "",
+    "created_at": "2026-07-20T10:35:49.247773",
+    "last_login": "2026-07-20T10:36:07.392500",
+    "must_change_pwd": true,
+    "status": "active"
+  }
+}
