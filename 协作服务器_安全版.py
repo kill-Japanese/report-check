@@ -68,6 +68,181 @@ def get_local_ip():
         return '127.0.0.1'
 
 
+# ==================== 无数据引导页面 HTML ====================
+NO_DATA_PAGE = '''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目点检表 - 上传数据</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .upload-box {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    padding: 48px 40px;
+    width: 100%;
+    max-width: 520px;
+    text-align: center;
+  }
+  .icon { font-size: 64px; margin-bottom: 20px; }
+  h1 { font-size: 28px; color: #333; margin-bottom: 12px; }
+  .subtitle { color: #888; margin-bottom: 32px; font-size: 15px; line-height: 1.6; }
+  .upload-area {
+    border: 2px dashed #cbd5e0;
+    border-radius: 12px;
+    padding: 40px 20px;
+    margin-bottom: 20px;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: #f7fafc;
+  }
+  .upload-area:hover, .upload-area.dragover {
+    border-color: #667eea;
+    background: #f0f4ff;
+  }
+  .upload-area p { color: #718096; margin-top: 8px; font-size: 14px; }
+  .upload-area strong { color: #4a5568; font-size: 16px; }
+  input[type=file] { display: none; }
+  .btn {
+    display: inline-block;
+    padding: 12px 32px;
+    border-radius: 8px;
+    border: none;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(102,126,234,0.4); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: #e2e8f0; color: #4a5568; margin-right: 10px; }
+  .status {
+    margin-top: 20px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    display: none;
+  }
+  .status.success { background: #f0fff4; color: #22543d; display: block; }
+  .status.error { background: #fff5f5; color: #742a2a; display: block; }
+  .status.info { background: #ebf8ff; color: #2a4365; display: block; }
+  .logout {
+    margin-top: 24px;
+    color: #a0aec0;
+    font-size: 13px;
+  }
+  .logout a { color: #667eea; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="upload-box">
+  <div class="icon">📊</div>
+  <h1>欢迎使用项目点检系统</h1>
+  <p class="subtitle">请上传「超声波户表脚本」Excel 文件<br>系统将自动生成延期点检报表</p>
+  
+  <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+    <strong>点击选择文件</strong> 或拖拽到此处
+    <p>支持 .xlsx / .xls 格式（超声波户表脚本）</p>
+  </div>
+  <input type="file" id="fileInput" accept=".xlsx,.xls">
+  
+  <div id="status" class="status"></div>
+  
+  <button class="btn btn-primary" id="uploadBtn" onclick="uploadFile()" disabled>
+    🚀 上传并生成报表
+  </button>
+  
+  <div class="logout">
+    <a href="#" onclick="logout()">退出登录</a>
+  </div>
+</div>
+
+<script>
+let selectedFile = null;
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const uploadBtn = document.getElementById('uploadBtn');
+const statusEl = document.getElementById('status');
+
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files.length > 0) {
+    selectedFile = e.target.files[0];
+    uploadArea.querySelector('strong').textContent = selectedFile.name;
+    uploadArea.querySelector('p').textContent = (selectedFile.size / 1024 / 1024).toFixed(2) + ' MB';
+    uploadBtn.disabled = false;
+  }
+});
+
+uploadArea.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  uploadArea.classList.add('dragover');
+});
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadArea.classList.remove('dragover');
+  if (e.dataTransfer.files.length > 0) {
+    fileInput.files = e.dataTransfer.files;
+    fileInput.dispatchEvent(new Event('change'));
+  }
+});
+
+function showStatus(msg, type) {
+  statusEl.className = 'status ' + type;
+  statusEl.textContent = msg;
+}
+
+async function uploadFile() {
+  if (!selectedFile) return;
+  uploadBtn.disabled = true;
+  showStatus('⏳ 正在上传并生成报表，请稍候...', 'info');
+  
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  
+  try {
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (data.success) {
+      showStatus('✅ 报表生成成功！正在跳转...', 'success');
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showStatus('❌ ' + (data.message || '生成失败'), 'error');
+      uploadBtn.disabled = false;
+    }
+  } catch (e) {
+    showStatus('❌ 上传失败：' + e.message, 'error');
+    uploadBtn.disabled = false;
+  }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  location.href = '/login';
+}
+</script>
+</body>
+</html>'''
+
 # ==================== 登录页面 HTML ====================
 LOGIN_PAGE = '''<!DOCTYPE html>
 <html lang="zh-CN">
@@ -606,6 +781,35 @@ class SecureCollaborationHandler(http.server.SimpleHTTPRequestHandler):
         except:
             return {}
 
+    def parse_multipart(self):
+        """解析 multipart/form-data 文件上传"""
+        content_type = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' not in content_type:
+            return None
+        boundary = content_type.split('boundary=')[-1].strip().strip('"')
+        content_length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(content_length)
+        # 解析 multipart
+        parts = body.split(b'--' + boundary.encode())
+        for part in parts:
+            if b'Content-Disposition' in part and b'filename=' in part:
+                # 提取文件名
+                header_end = part.find(b'\r\n\r\n')
+                if header_end == -1:
+                    continue
+                headers = part[:header_end].decode('utf-8', errors='replace')
+                import re
+                fn_match = re.search(r'filename="([^"]+)"', headers)
+                if not fn_match:
+                    continue
+                filename = fn_match.group(1)
+                file_data = part[header_end+4:]
+                # 移除结尾的 \r\n--
+                if file_data.endswith(b'\r\n'):
+                    file_data = file_data[:-2]
+                return {'filename': filename, 'data': file_data}
+        return None
+
     # ---------- 权限检查辅助 ----------
     def require_auth(self):
         """要求已登录"""
@@ -668,7 +872,7 @@ window.CURRENT_USER = {user_info};
                 self.end_headers()
                 self.wfile.write(html.encode('utf-8'))
                 return
-            self.send_html('<h1>报表文件不存在</h1>', 404)
+            self.send_html(NO_DATA_PAGE)
             return
 
         # --- 用户管理页 ---
@@ -794,6 +998,48 @@ window.CURRENT_USER = {user_info};
             self.end_headers()
             self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
             return
+
+        # --- 上传 Excel 并生成报表（需 save 权限）---
+        if path == '/api/upload':
+            if not self.require_permission('save'):
+                return
+            try:
+                upload = self.parse_multipart()
+                if not upload:
+                    self.send_json({'success': False, 'message': '请选择要上传的 Excel 文件'}, 400)
+                    return
+                filename = upload['filename']
+                file_data = upload['data']
+                if not filename.lower().endswith(('.xlsx', '.xls')):
+                    self.send_json({'success': False, 'message': '只支持 .xlsx 或 .xls 格式'}, 400)
+                    return
+                if len(file_data) == 0:
+                    self.send_json({'success': False, 'message': '文件为空'}, 400)
+                    return
+                # 保存上传的 Excel
+                excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
+                with open(excel_path, 'wb') as f:
+                    f.write(file_data)
+                # 调用主脚本生成报表
+                import subprocess
+                result = subprocess.run(
+                    [sys.executable, os.path.join(BASE_DIR, '更新点检表.py'), excel_path],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=120
+                )
+                if result.returncode != 0:
+                    error_msg = result.stderr[-500:] if result.stderr else '生成失败'
+                    self.send_json({'success': False, 'message': f'报表生成失败：{error_msg}'}, 500)
+                    return
+                user = self.get_current_user()
+                auth._audit_log('REPORT_GENERATE', user['username'], f'上传文件 {filename} 生成报表')
+                self.send_json({'success': True, 'message': '报表生成成功'})
+                return
+            except subprocess.TimeoutExpired:
+                self.send_json({'success': False, 'message': '生成超时，请稍后重试'}, 500)
+                return
+            except Exception as e:
+                self.send_json({'success': False, 'message': f'上传失败：{str(e)}'}, 500)
+                return
 
         # --- 修改密码（需登录）---
         if path == '/api/change-password':
