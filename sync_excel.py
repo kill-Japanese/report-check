@@ -175,6 +175,11 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
     """
     将协作数据（新增/删除/归档/编辑）应用到原始 Excel
     返回: (成功, 消息, 变更数量)
+    
+    执行顺序（关键！避免行号漂移）：
+    1. 先处理归档（不改变行号，使用初始映射）
+    2. 再处理删除（从大到小删除，使用初始映射）
+    3. 最后处理新增（追加到末尾，不影响已有行号）
     """
     collab = load_collab_data()
     changes = 0
@@ -182,15 +187,41 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
     if not os.path.exists(EXCEL_FILE):
         return False, '原始 Excel 文件不存在', 0
     
-    # 读取所有现有项目
+    # 读取所有现有项目（仅一次，作为行号映射的基准）
     existing_projects = read_excel_projects()
-    id_to_excel_row = {p['id']: p['id'] + 1 for p in existing_projects}  # id是df的idx，Excel行号=idx+1
+    # id是df的idx，Excel行号=idx+1（因为df从0开始，Excel从1开始，且前3行是表头）
+    # 实际上：df.idx=3 对应 Excel第4行，所以 Excel行号 = idx + 1
+    id_to_excel_row = {p['id']: p['id'] + 1 for p in existing_projects}
     
     try:
         wb = load_workbook(EXCEL_FILE)
         ws = wb['任务计划表']
         
-        # 1. 处理删除 - 从下往上删除行
+        # ============== 1. 先处理归档（不改变行号） ==============
+        archived = collab.get('archived', {})
+        
+        # 先清空所有已有的归档标志
+        for p in existing_projects:
+            row_num = id_to_excel_row.get(p['id'])
+            if row_num:
+                ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='')
+        
+        # 再写入新的归档标志
+        if archived:
+            for pid, arch_info in archived.items():
+                # pid 可能是整数或字符串
+                try:
+                    pid_int = int(pid)
+                except:
+                    pid_int = pid
+                
+                row_num = id_to_excel_row.get(pid_int) or id_to_excel_row.get(str(pid_int))
+                if row_num and arch_info:
+                    ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='已归档')
+                    changes += 1
+                    print(f"   📦 归档: Excel第{row_num}行")
+        
+        # ============== 2. 再处理删除（从大到小删除，避免行号漂移） ==============
         deleted_ids = set()
         for did in collab.get('deletedIds', []):
             try:
@@ -203,7 +234,7 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
             rows_to_delete = []
             for p in existing_projects:
                 if p['id'] in deleted_ids or str(p['id']) in deleted_ids:
-                    rows_to_delete.append(p['id'] + 1)  # Excel行号
+                    rows_to_delete.append(id_to_excel_row[p['id']])
             
             rows_to_delete.sort(reverse=True)
             for row_num in rows_to_delete:
@@ -211,7 +242,7 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
                 changes += 1
                 print(f"   🗑️  删除Excel第{row_num}行")
         
-        # 2. 处理新增项目 - 写入 Excel
+        # ============== 3. 最后处理新增项目（追加到末尾） ==============
         new_projects = collab.get('newProjects', [])
         
         if new_projects:
@@ -255,39 +286,12 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
                 changes += 1
                 print(f"   ➕ 新增: {np.get('项目', '')} / {np.get('资源名称', '')}")
         
-        # 3. 处理归档 - 将归档标志写入Excel
-        # 策略：先清空所有归档标志，再根据协作数据重新写入
-        excel_projects = read_excel_projects()
-        id_to_row = {p['id']: p['id'] + 1 for p in excel_projects}
-        
-        # 先清空所有已有的归档标志
-        for p in excel_projects:
-            row_num = id_to_row.get(p['id'])
-            if row_num:
-                ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='')
-        
-        # 再写入新的归档标志
-        archived = collab.get('archived', {})
-        if archived:
-            for pid, arch_info in archived.items():
-                # pid 可能是整数或字符串
-                try:
-                    pid_int = int(pid)
-                except:
-                    pid_int = pid
-                
-                row_num = id_to_row.get(pid_int) or id_to_row.get(str(pid_int))
-                if row_num and arch_info:
-                    ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='已归档')
-                    changes += 1
-                    print(f"   📦 归档: Excel第{row_num}行")
-        
         wb.save(EXCEL_FILE)
         
     except Exception as e:
         return False, f'写入 Excel 失败: {str(e)}', changes
     
-    # 3. 处理编辑（localEdits）
+    # 处理编辑（localEdits）- 计入变更数
     local_edits = collab.get('localEdits', {})
     if local_edits:
         changes += len(local_edits)
@@ -341,12 +345,15 @@ def full_sync(operation: str = '未知操作') -> tuple[bool, str]:
         if not ok:
             return False, '; '.join(messages)
         
-        # 步骤4: 清空已写入 Excel 的协作数据（已持久化到Excel）
+        # 步骤4: 清空已写入 Excel 的协作数据（已持久化到Excel，避免下次重复应用）
         collab = load_collab_data()
+        # 已写入Excel的：新项目、删除ID、归档标志
         if collab.get('newProjects'):
             collab['newProjects'] = []
         if collab.get('deletedIds'):
             collab['deletedIds'] = []
+        if collab.get('archived'):
+            collab['archived'] = {}
         save_collab_data(collab)
     else:
         messages.append('无需要同步的变更')

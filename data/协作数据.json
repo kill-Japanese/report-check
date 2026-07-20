@@ -2,9 +2,16 @@
   "localEdits": {},
   "notes": {},
   "checked": {},
-  "archived": {},
+  "archived": {
+    "4": {
+      "time": "2026-07-20",
+      "project": "巴西NB-V3"
+    }
+  },
   "customEmails": {},
   "newProjects": [],
-  "lastUpdate": "2026-07-20T14:17:45.196923",
-  "deletedIds": []
+  "lastUpdate": "2026-07-20T14:46:25.360462",
+  "deletedIds": [
+    3
+  ]
 }

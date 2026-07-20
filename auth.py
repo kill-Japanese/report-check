@@ -308,7 +308,7 @@ def create_user(username: str, password: str, role: str = 'viewer',
         'must_change_pwd': False,
         'status': 'active'
     }
-    save_users(users)
+    save_users(users, push=False)
     _audit_log('USER_CREATE', 'admin', f'创建用户: {username}, 角色: {role}')
     return True, '用户创建成功'
 
@@ -331,7 +331,7 @@ def update_user(username: str, **kwargs) -> tuple[bool, str]:
         if k in ('role', 'email', 'status', 'must_change_pwd'):
             users[username][k] = v
 
-    save_users(users)
+    save_users(users, push=False)
     _audit_log('USER_UPDATE', 'admin', f'更新用户: {username}, 字段: {list(kwargs.keys())}')
     return True, '用户更新成功'
 
@@ -346,7 +346,7 @@ def delete_user(username: str) -> tuple[bool, str]:
         return False, '用户不存在'
 
     del users[username]
-    save_users(users)
+    save_users(users, push=False)
     _audit_log('USER_DELETE', 'admin', f'删除用户: {username}')
     return True, '用户删除成功'
 
@@ -366,7 +366,7 @@ def change_password(username: str, old_password: str, new_password: str) -> tupl
 
     users[username]['password'] = _hash_password(new_password)
     users[username]['must_change_pwd'] = False
-    save_users(users)
+    save_users(users, push=False)
     _audit_log('PASSWORD_CHANGE', username, '修改密码成功')
     return True, '密码修改成功'
 
@@ -459,7 +459,7 @@ def create_session(username: str) -> str:
     users = load_users()
     if username in users:
         users[username]['last_login'] = datetime.now().isoformat()
-        save_users(users)
+        save_users(users, push=False)
 
     _audit_log('LOGIN', username, '登录成功')
     return session_id
