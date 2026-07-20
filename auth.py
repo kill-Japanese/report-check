@@ -3,7 +3,7 @@
 项目点检表 - 权限管理与安全模块
 
 功能：
-- 用户管理（增删改查）
+- 用户管理（增删改查）—— 数据源：用户管理.xlsx（GitHub）
 - 密码加密存储（PBKDF2-HMAC-SHA256）
 - 角色权限（admin / editor / viewer）
 - Session 管理（带过期时间）
@@ -20,19 +20,28 @@ import uuid
 import secrets
 import time
 import threading
+import subprocess
 from datetime import datetime, timedelta
 from functools import wraps
+
+try:
+    from openpyxl import load_workbook, Workbook
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
 
 # ==================== 配置 ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# 数据文件（持久化：存在 data/ 目录，会提交到 GitHub）
-USERS_FILE = os.path.join(DATA_DIR, 'users.json')
+# 用户数据源：Excel（GitHub 持久化）
+USERS_EXCEL = os.path.join(BASE_DIR, '用户管理.xlsx')
+
+# 审计日志（持久化）
 AUDIT_LOG_FILE = os.path.join(DATA_DIR, 'audit.log')
 
-# 临时数据（不持久化：存在根目录，随部署重置）
+# 临时数据（不持久化：随部署重置）
 SESSIONS_FILE = os.path.join(BASE_DIR, 'sessions.json')
 RATE_LIMIT_FILE = os.path.join(BASE_DIR, 'rate_limit.json')
 
@@ -138,16 +147,112 @@ def _audit_log(action: str, username: str, detail: str = ''):
         pass
 
 
-# ==================== 用户管理 ====================
+# ==================== Git 同步工具 ====================
+
+def _git_push(message: str) -> tuple[bool, str]:
+    """提交并推送到 GitHub"""
+    try:
+        if not os.path.exists(os.path.join(BASE_DIR, '.git')):
+            return False, '未检测到 Git 仓库'
+        subprocess.run(['git', 'add', '用户管理.xlsx', 'data/'],
+                       capture_output=True, cwd=BASE_DIR, timeout=10)
+        result = subprocess.run(['git', 'status', '--porcelain'],
+                                capture_output=True, text=True, cwd=BASE_DIR, timeout=10)
+        if not result.stdout.strip():
+            return True, '无变更'
+        commit_msg = f'[用户同步] {message} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
+        subprocess.run(['git', 'commit', '-m', commit_msg],
+                       capture_output=True, cwd=BASE_DIR, timeout=10)
+        push = subprocess.run(['git', 'push', 'origin', 'main'],
+                              capture_output=True, text=True, cwd=BASE_DIR, timeout=30)
+        if push.returncode != 0:
+            return False, f'推送失败: {push.stderr[:200]}'
+        return True, '已同步到 GitHub'
+    except Exception as e:
+        return False, f'同步失败: {str(e)}'
+
+
+# ==================== 用户管理（Excel 数据源） ====================
+
+USER_HEADERS = ['用户名', '密码哈希(JSON)', '角色', '邮箱', '创建时间', '最后登录', '必须改密码', '状态']
 
 def load_users() -> dict:
-    """加载所有用户"""
-    return _safe_read_json(USERS_FILE, {})
+    """从 用户管理.xlsx 加载所有用户"""
+    with _lock:
+        if not HAS_OPENPYXL:
+            return {}
+        if not os.path.exists(USERS_EXCEL):
+            return {}
+        try:
+            wb = load_workbook(USERS_EXCEL)
+            ws = wb.active
+            users = {}
+            rows = list(ws.iter_rows(min_row=2, values_only=True))
+            for row in rows:
+                if not row or not row[0]:
+                    continue
+                username = str(row[0]).strip()
+                pwd_raw = row[1] if len(row) > 1 else '{}'
+                try:
+                    password = json.loads(pwd_raw) if isinstance(pwd_raw, str) else {}
+                except Exception:
+                    password = {}
+                role = str(row[2]).strip() if len(row) > 2 and row[2] else 'viewer'
+                email = str(row[3]).strip() if len(row) > 3 and row[3] else ''
+                created_at = str(row[4]).strip() if len(row) > 4 and row[4] else ''
+                last_login = str(row[5]).strip() if len(row) > 5 and row[5] else None
+                must_change = str(row[6]).strip() == '是' if len(row) > 6 and row[6] else False
+                status = str(row[7]).strip() if len(row) > 7 and row[7] else 'active'
+                users[username] = {
+                    'username': username,
+                    'password': password,
+                    'role': role,
+                    'email': email,
+                    'created_at': created_at,
+                    'last_login': last_login,
+                    'must_change_pwd': must_change,
+                    'status': status
+                }
+            return users
+        except Exception as e:
+            print(f'[auth] 读取用户Excel失败: {e}')
+            return {}
 
 
-def save_users(users: dict):
-    """保存用户"""
-    _safe_write_json(USERS_FILE, users)
+def save_users(users: dict, push: bool = True):
+    """保存用户到 用户管理.xlsx，并推送到 GitHub"""
+    with _lock:
+        if not HAS_OPENPYXL:
+            return
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = '用户表'
+            ws.append(USER_HEADERS)
+            for name, info in sorted(users.items()):
+                pwd_json = json.dumps(info.get('password', {}), ensure_ascii=False)
+                must_change = '是' if info.get('must_change_pwd', False) else '否'
+                ws.append([
+                    info.get('username', name),
+                    pwd_json,
+                    info.get('role', 'viewer'),
+                    info.get('email', ''),
+                    info.get('created_at', ''),
+                    info.get('last_login') or '',
+                    must_change,
+                    info.get('status', 'active')
+                ])
+            col_widths = [15, 60, 12, 25, 25, 25, 12, 10]
+            for i, w in enumerate(col_widths):
+                ws.column_dimensions[chr(65+i)].width = w
+            wb.save(USERS_EXCEL)
+        except Exception as e:
+            print(f'[auth] 写入用户Excel失败: {e}')
+    
+    if push:
+        ok, msg = _git_push('更新用户数据')
+        if not ok:
+            print(f'[auth] 警告: {msg}')
 
 
 def init_default_users():
@@ -163,10 +268,10 @@ def init_default_users():
             'email': '',
             'created_at': datetime.now().isoformat(),
             'last_login': None,
-            'must_change_pwd': True,  # 首次登录必须改密码
+            'must_change_pwd': True,
             'status': 'active'
         }
-        save_users(users)
+        save_users(users, push=True)
         _audit_log('USER_CREATE', 'system', '创建默认管理员 admin / admin123')
         print(f"\n⚠️  已创建默认管理员账号: admin / {default_pwd}")
         print("    请登录后立即修改密码！\n")

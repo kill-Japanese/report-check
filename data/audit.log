@@ -7,3 +7,4 @@
 [2026-07-20 13:23:12] LOGIN | 用户: admin | 登录成功
 [2026-07-20 13:24:45] LOGIN | 用户: admin | 登录成功
 [2026-07-20 13:25:38] GITHUB_SYNC | 用户: system | 定期自动同步
+[2026-07-20 13:37:15] USER_CREATE | 用户: admin | 创建用户: testuser, 角色: editor
