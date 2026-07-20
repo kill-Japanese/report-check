@@ -1358,7 +1358,9 @@ async function collabLoadData() {
     if (data.localEdits) localEdits = { ...localEdits, ...data.localEdits };
     if (data.notes) notes = { ...notes, ...data.notes };
     if (data.checked) checked = { ...checked, ...data.checked };
-    if (data.archived) archived = { ...archived, ...data.archived };
+    // 【修复】archived 取并集：本地 + 服务器端（服务器端可能有其他用户待处理的归档操作）
+    // 使用 Object.assign 合并，保留本地的归档时间戳
+    if (data.archived) archived = Object.assign({}, data.archived, archived);
     if (data.customEmails) customEmails = { ...customEmails, ...data.customEmails };
     
     // 合并新增项目
@@ -1373,6 +1375,30 @@ async function collabLoadData() {
           existingIds.add(p.id);
         }
       });
+    }
+    
+    // 【关键修复】合并 deletedIds（服务器端可能有待处理的删除操作）
+    // 取并集：本地 deletedIds + 服务器端 deletedIds
+    if (data.deletedIds && data.deletedIds.length > 0) {
+      const existingDelIds = new Set(deletedIds);
+      data.deletedIds.forEach(function(did) {
+        if (!existingDelIds.has(did)) {
+          deletedIds.push(did);
+          existingDelIds.add(did);
+        }
+      });
+      // 从 RAW_DATA 中移除已删除的项目（保持前端视图一致）
+      if (deletedIds.length > 0) {
+        const deletedSet = new Set(deletedIds.map(function(x) { return String(x); }));
+        RAW_DATA.allProjects = RAW_DATA.allProjects.filter(function(p) {
+          return !deletedSet.has(String(p.id));
+        });
+        Object.keys(RAW_DATA.depts).forEach(function(d) {
+          RAW_DATA.depts[d] = RAW_DATA.depts[d].filter(function(p) {
+            return !deletedSet.has(String(p.id));
+          });
+        });
+      }
     }
     
     collabLastUpdate = data.lastUpdate || '';
