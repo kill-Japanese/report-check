@@ -1491,6 +1491,41 @@ def main():
     if not os.path.exists(DATA_FILE):
         save_data(load_data())
 
+    # 自动生成报表（如果Excel存在但HTML不存在，或HTML为空）
+    excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
+    if os.path.exists(excel_path):
+        need_generate = False
+        if not os.path.exists(HTML_FILE):
+            need_generate = True
+            print("📊 检测到报表HTML不存在，正在自动生成...")
+        elif os.path.getsize(HTML_FILE) < 50000:
+            need_generate = True
+            print("📊 检测到报表HTML文件过小（可能为空），正在重新生成...")
+        else:
+            # 检查 HTML 中是否有数据
+            try:
+                with open(HTML_FILE, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                if 'allProjects' not in html_content or '"total": 0' in html_content or '"today": ""' in html_content:
+                    need_generate = True
+                    print("📊 检测到报表数据为空，正在重新生成...")
+            except:
+                pass
+
+        if need_generate:
+            try:
+                import subprocess
+                result = subprocess.run(
+                    [sys.executable, os.path.join(BASE_DIR, '更新点检表.py'), excel_path],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=120
+                )
+                if result.returncode == 0:
+                    print("✅ 报表自动生成成功")
+                else:
+                    print(f"❌ 报表自动生成失败: {(result.stderr or result.stdout)[-300:]}")
+            except Exception as e:
+                print(f"❌ 报表自动生成异常: {e}")
+
     local_ip = get_local_ip()
 
     print("=" * 60)
