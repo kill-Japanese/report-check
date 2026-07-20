@@ -3676,7 +3676,16 @@ const SURNAME_PINYIN = {
   '有':'you','琴':'qin','梁丘':'liangqiu','左丘':'zuoqiu','东门':'dongmen',
   '西门':'ximen','商':'shang','牟':'mou','佘':'she','佴':'nai','伯':'bo','赏':'shang',
   '南宫':'nangong','墨':'mo','哈':'ha','谯':'qiao','笪':'da','年':'nian','爱':'ai',
-  '阳':'yang','佟':'tong','答':'da','项':'xiang','危':'wei','童':'tong','毛':'mao'
+  '阳':'yang','佟':'tong','答':'da','项':'xiang','危':'wei','童':'tong','毛':'mao',
+  '苑':'yuan','鲍':'bao','华':'hua','岑':'cen','滕':'teng','殷':'yin','罗':'luo','毕':'bi',
+  '郝':'hao','邬':'wu','乐':'le','于':'yu','时':'shi','傅':'fu','皮':'pi','卞':'bian',
+  '齐':'qi','康':'kang','伍':'wu','余':'yu','元':'yuan','卜':'bu','顾':'gu','孟':'meng',
+  '黄':'huang','邵':'shao','戚':'qi','谢':'xie','邹':'zou','喻':'yu','柏':'bai','水':'shui',
+  '窦':'dou','章':'zhang','云':'yun','苏':'su','潘':'pan','葛':'ge','奚':'xi','范':'fan',
+  '彭':'peng','郎':'lang','鲁':'lu','韦':'wei','昌':'chang','马':'ma','苗':'miao','凤':'feng',
+  '花':'hua','方':'fang','俞':'yu','任':'ren','袁':'yuan','柳':'liu','酆':'feng','鲍':'bao',
+  '史':'shi','唐':'tang','费':'fei','廉':'lian','岑':'cen','薛':'xue','雷':'lei','贺':'he',
+  '倪':'ni','汤':'tang','滕':'teng','殷':'yin','罗':'luo','毕':'bi','郝':'hao','邬':'wu'
 };
 
 // 中文常用字拼音库（用于名字拼音生成）
@@ -3751,7 +3760,7 @@ function generateEmailFromName(name) {
     } else {
       // 单姓
       const firstChar = name.substring(0, 1);
-      surname = SURNAME_PINYIN[firstChar] || firstChar;
+      surname = SURNAME_PINYIN[firstChar] || CHAR_PINYIN[firstChar] || firstChar;
       givenName = name.substring(1);
     }
   }
