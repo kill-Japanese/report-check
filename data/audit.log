@@ -17,3 +17,4 @@
 [2026-07-20 16:18:38] USER_CREATE | 用户: admin | 创建用户: test_editor, 角色: editor
 [2026-07-20 16:18:38] USER_DELETE | 用户: admin | 删除用户: test_editor
 [2026-07-20 16:39:39] USER_CREATE | 用户: admin | 创建用户: testuser01, 角色: editor
+[2026-07-20 16:48:55] USER_CREATE | 用户: admin | 创建用户: testuser02, 角色: viewer
