@@ -308,7 +308,7 @@ def create_user(username: str, password: str, role: str = 'viewer',
         'must_change_pwd': False,
         'status': 'active'
     }
-    save_users(users, push=False)
+    save_users(users, push=True)
     _audit_log('USER_CREATE', 'admin', f'创建用户: {username}, 角色: {role}')
     return True, '用户创建成功'
 
@@ -331,7 +331,7 @@ def update_user(username: str, **kwargs) -> tuple[bool, str]:
         if k in ('role', 'email', 'status', 'must_change_pwd'):
             users[username][k] = v
 
-    save_users(users, push=False)
+    save_users(users, push=True)
     _audit_log('USER_UPDATE', 'admin', f'更新用户: {username}, 字段: {list(kwargs.keys())}')
     return True, '用户更新成功'
 
@@ -346,7 +346,7 @@ def delete_user(username: str) -> tuple[bool, str]:
         return False, '用户不存在'
 
     del users[username]
-    save_users(users, push=False)
+    save_users(users, push=True)
     _audit_log('USER_DELETE', 'admin', f'删除用户: {username}')
     return True, '用户删除成功'
 
@@ -366,7 +366,7 @@ def change_password(username: str, old_password: str, new_password: str) -> tupl
 
     users[username]['password'] = _hash_password(new_password)
     users[username]['must_change_pwd'] = False
-    save_users(users, push=False)
+    save_users(users, push=True)
     _audit_log('PASSWORD_CHANGE', username, '修改密码成功')
     return True, '密码修改成功'
 
@@ -585,6 +585,40 @@ def get_audit_log(limit: int = 100) -> list:
 
 
 # ==================== 初始化 ====================
+
+def startup_sync() -> tuple[bool, str]:
+    """启动时从 GitHub 拉取最新的用户数据（用户管理.xlsx）
+    
+    关键：必须在 init_auth() / init_default_users() 之前调用，
+    否则 init_default_users 会在文件缺失时创建空的用户表并推送，
+    覆盖掉 GitHub 上已有的用户数据！
+    """
+    try:
+        if not os.path.exists(os.path.join(BASE_DIR, '.git')):
+            return False, '未检测到 Git 仓库'
+
+        # 1. fetch 远程最新（不修改本地文件）
+        subprocess.run(
+            ['git', 'fetch', 'origin', 'main'],
+            capture_output=True, cwd=BASE_DIR, timeout=30
+        )
+
+        # 2. 从远程 origin/main 恢复用户管理.xlsx（温和方式，不影响其他文件）
+        if not os.path.exists(USERS_EXCEL):
+            subprocess.run(
+                ['git', 'checkout', 'origin/main', '--', '用户管理.xlsx'],
+                capture_output=True, cwd=BASE_DIR, timeout=10
+            )
+
+        if os.path.exists(USERS_EXCEL):
+            users = load_users()
+            return True, f'用户数据同步成功（共 {len(users)} 个用户）'
+        else:
+            return True, 'Git 同步完成，但用户管理.xlsx 尚不存在（首次运行将创建默认用户）'
+
+    except Exception as e:
+        return False, f'用户数据同步失败: {str(e)}'
+
 
 def init_auth():
     """初始化认证系统"""

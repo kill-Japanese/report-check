@@ -1207,6 +1207,18 @@ let deletedIds = JSON.parse(localStorage.getItem('deletedIds') || '[]');
 let customEmails = JSON.parse(localStorage.getItem('customEmails') || '{}');
 let newProjects = JSON.parse(localStorage.getItem('newProjects') || '[]');
 
+// 【修复】同步 Excel 中已归档的项目到 archived 对象
+// 后端写入Excel的归档状态需要同步到前端，否则归档看板看不到
+if (typeof RAW_DATA !== 'undefined' && RAW_DATA.allProjects) {
+  RAW_DATA.allProjects.forEach(function(p) {
+    if (p['已归档'] && !archived[p.id]) {
+      archived[p.id] = { time: new Date().toISOString(), project: p['项目'], fromExcel: true };
+    }
+  });
+  // 同步回 localStorage
+  localStorage.setItem('projectArchived', JSON.stringify(archived));
+}
+
 // 将本地新增的项目合并到原始数据中（页面刷新后恢复新增项目）
 function mergeLocalNewProjects() {
   const existingIds = new Set(RAW_DATA.allProjects.map(p => p.id));

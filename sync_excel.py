@@ -29,17 +29,51 @@ COL_DELETED = 21   # 第22列(V列)用于存放删除标志（软删除，避免
 # ==================== Git 操作 ====================
 
 def git_pull() -> tuple[bool, str]:
-    """从 GitHub 拉取最新数据"""
+    """从 GitHub 拉取最新数据，并恢复关键数据文件（用户管理.xlsx 等）
+    
+    注意：只恢复数据文件，不会强制重置代码文件，避免丢失本地代码修改。
+    """
     try:
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
-        result = subprocess.run(
+
+        # 1. 先 fetch 远程最新（不修改本地文件）
+        fetch = subprocess.run(
+            ['git', 'fetch', 'origin', 'main'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+        )
+        if fetch.returncode != 0:
+            return False, f'fetch失败: {fetch.stderr[:200]}'
+
+        # 2. 关键修复：从远程 origin/main 恢复数据文件（不影响代码文件）
+        #    即使 git pull 说 "Already up to date"，也能确保文件存在
+        critical_files = [
+            '用户管理.xlsx',
+            '超声波户表脚本.xlsx',
+        ]
+        restored = []
+        for f in critical_files:
+            fpath = os.path.join(BASE_DIR, f)
+            if not os.path.exists(fpath):
+                # 文件不存在，从远程恢复
+                checkout = subprocess.run(
+                    ['git', 'checkout', 'origin/main', '--', f],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+                )
+                if checkout.returncode == 0 and os.path.exists(fpath):
+                    restored.append(f)
+
+        # 3. 执行正常的 git pull（合并远程变更到本地）
+        pull = subprocess.run(
             ['git', 'pull', 'origin', 'main'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
-        if result.returncode != 0:
-            return False, f'拉取失败: {result.stderr[:200]}'
-        return True, '拉取成功'
+        # pull 失败不致命（比如有本地未提交变更），只要关键文件恢复了就行
+
+        msg_parts = ['拉取成功']
+        if restored:
+            msg_parts.append(f'已恢复 {len(restored)} 个文件: {", ".join(restored)}')
+        return True, '（' + '；'.join(msg_parts) + '）'
     except subprocess.TimeoutExpired:
         return False, '拉取超时'
     except Exception as e:

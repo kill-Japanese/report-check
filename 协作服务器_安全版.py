@@ -1613,7 +1613,18 @@ def start_auto_pull(interval_seconds: int = 300):
 
 def main():
     os.chdir(BASE_DIR)
+
+    # ========== 【关键修复1】启动时先从 GitHub 拉取最新数据 ==========
+    # 必须在 init_auth() 之前！否则 init_auth 会在文件缺失时创建空的用户表并推送，
+    # 覆盖掉 GitHub 上已有的用户数据！
+    print("🔄 正在从 GitHub 拉取最新数据...")
+    sync_ok, sync_msg = sync_excel.startup_sync()
+    print(f"   {sync_msg}")
+
+    # ========== 【关键修复2】再初始化认证系统 ==========
+    # 此时 用户管理.xlsx 已经从 GitHub 拉取回来，不会被 init_default_users 覆盖
     auth.init_auth()
+
     # 启动自动同步到 GitHub（每5分钟）
     auth.auto_sync_periodically(300)
     
@@ -1622,11 +1633,6 @@ def main():
 
     if not os.path.exists(DATA_FILE):
         save_data(load_data())
-
-    # ========== 启动时同步：从 GitHub 拉取最新并生成报表 ==========
-    print("🔄 正在从 GitHub 拉取最新数据...")
-    sync_ok, sync_msg = sync_excel.startup_sync()
-    print(f"   {sync_msg}")
 
     # 自动生成报表（如果Excel存在但HTML不存在，或HTML为空）
     excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
