@@ -1670,7 +1670,7 @@ def main():
     print("=" * 60)
     print(f"📂 工作目录: {BASE_DIR}")
     print(f"💾 数据文件: {DATA_FILE}")
-    print(f"👥 用户文件: {auth.USERS_FILE}")
+    print(f"👥 用户文件: {auth.USERS_EXCEL}")
     print()
     print("✅ 已启用: 登录认证 · 角色权限 · Session 管理")
     print("✅ 已启用: 登录限流 · CSRF 防护 · 操作审计")
