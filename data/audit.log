@@ -29,3 +29,4 @@
 [2026-07-20 17:38:29] USER_CREATE | 用户: admin | 创建用户: verify_push_retry, 角色: viewer
 [2026-07-20 17:38:31] GITHUB_SYNC | 用户: system | 验证同步用户文件
 [2026-07-20 17:38:33] USER_CREATE | 用户: admin | 创建用户: e2e_verify_user, 角色: editor
+[2026-07-20 17:43:33] USER_CREATE | 用户: admin | 创建用户: e2e_user1, 角色: editor
