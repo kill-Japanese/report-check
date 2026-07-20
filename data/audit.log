@@ -20,3 +20,4 @@
 [2026-07-20 16:48:55] USER_CREATE | 用户: admin | 创建用户: testuser02, 角色: viewer
 [2026-07-20 16:49:00] USER_CREATE | 用户: system | 创建默认管理员 admin / admin123
 [2026-07-20 16:52:50] USER_CREATE | 用户: admin | 创建用户: testuser03, 角色: editor
+[2026-07-20 16:55:07] USER_CREATE | 用户: admin | 创建用户: test_user1, 角色: editor
