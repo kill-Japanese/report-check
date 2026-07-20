@@ -1308,7 +1308,8 @@ async function collabSyncToServer() {
         checked: checked,
         archived: archived,
         customEmails: customEmails,
-        newProjects: newProjects
+        newProjects: newProjects,
+        deletedIds: typeof deletedIds !== 'undefined' ? deletedIds : []
       })
     });
     
@@ -2961,6 +2962,7 @@ function archiveProject(id) {
     updateStats();
     renderTable();
     showSaved();
+    collabMarkDirty();  // 触发同步到服务器
   }
 }
 
@@ -2970,6 +2972,7 @@ function restoreProject(id) {
   updateStats();
   renderTable();
   showSaved();
+  collabMarkDirty();  // 触发同步到服务器
 }
 
 // 彻底删除项目（从所有数据中移除）
@@ -2999,6 +3002,10 @@ function deleteProject(id) {
   delete notes[`note_${id}`];
   delete checked[id];
   
+  // 记录删除ID，用于同步到服务器
+  if (typeof deletedIds === 'undefined') window.deletedIds = [];
+  if (!deletedIds.includes(id)) deletedIds.push(id);
+  
   localStorage.setItem('projectEdits', JSON.stringify(localEdits));
   localStorage.setItem('projectArchived', JSON.stringify(archived));
   localStorage.setItem('projectNotes', JSON.stringify(notes));
@@ -3008,6 +3015,7 @@ function deleteProject(id) {
   renderTable();
   initResourceSearch();
   showSaved();
+  collabMarkDirty();  // 触发同步到服务器
 }
 
 // 一键清理测试项目
