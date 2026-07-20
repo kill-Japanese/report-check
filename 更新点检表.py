@@ -1203,6 +1203,9 @@ let localEdits = JSON.parse(localStorage.getItem('projectEdits') || '{}');
 let notes = JSON.parse(localStorage.getItem('projectNotes') || '{}');
 let checked = JSON.parse(localStorage.getItem('projectChecked') || '{}');
 let archived = JSON.parse(localStorage.getItem('projectArchived') || '{}');
+let deletedIds = JSON.parse(localStorage.getItem('deletedIds') || '[]');
+let customEmails = JSON.parse(localStorage.getItem('customEmails') || '{}');
+let newProjects = JSON.parse(localStorage.getItem('newProjects') || '[]');
 
 // 将本地编辑中新增的项目合并到原始数据中（页面刷新后恢复新增项目）
 function mergeLocalNewProjects() {
@@ -1274,6 +1277,8 @@ async function collabLoadData() {
     localStorage.setItem('projectChecked', JSON.stringify(checked));
     localStorage.setItem('projectArchived', JSON.stringify(archived));
     localStorage.setItem('customEmails', JSON.stringify(customEmails));
+    localStorage.setItem('newProjects', JSON.stringify(newProjects));
+    localStorage.setItem('deletedIds', JSON.stringify(deletedIds));
     
     console.log('[协作] 已从服务器加载数据');
   } catch (e) {
@@ -1286,19 +1291,6 @@ async function collabSyncToServer() {
   if (!collabDirty) return;
   
   try {
-    // 收集新增的项目
-    const existingIds = new Set(RAW_DATA.allProjects.map(p => p.id));
-    const newProjects = [];
-    Object.keys(localEdits).forEach(id => {
-      const numId = parseInt(id);
-      if (!existingIds.has(numId)) {
-        const edit = localEdits[id];
-        if (edit && edit.项目 && edit.资源名称) {
-          newProjects.push(edit);
-        }
-      }
-    });
-    
     const resp = await fetch('/api/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1309,7 +1301,7 @@ async function collabSyncToServer() {
         archived: archived,
         customEmails: customEmails,
         newProjects: newProjects,
-        deletedIds: typeof deletedIds !== 'undefined' ? deletedIds : []
+        deletedIds: deletedIds
       })
     });
     
@@ -1317,6 +1309,15 @@ async function collabSyncToServer() {
       const result = await resp.json();
       collabLastUpdate = result.lastUpdate || collabLastUpdate;
       collabDirty = false;
+      // 同步成功后清空已提交的新增项目和删除ID
+      if (newProjects.length > 0) {
+        newProjects = [];
+        localStorage.setItem('newProjects', JSON.stringify(newProjects));
+      }
+      if (deletedIds.length > 0) {
+        deletedIds = [];
+        localStorage.setItem('deletedIds', JSON.stringify(deletedIds));
+      }
       console.log('[协作] 已同步到服务器');
     }
   } catch (e) {
@@ -3003,13 +3004,13 @@ function deleteProject(id) {
   delete checked[id];
   
   // 记录删除ID，用于同步到服务器
-  if (typeof deletedIds === 'undefined') window.deletedIds = [];
   if (!deletedIds.includes(id)) deletedIds.push(id);
   
   localStorage.setItem('projectEdits', JSON.stringify(localEdits));
   localStorage.setItem('projectArchived', JSON.stringify(archived));
   localStorage.setItem('projectNotes', JSON.stringify(notes));
   localStorage.setItem('projectChecked', JSON.stringify(checked));
+  localStorage.setItem('deletedIds', JSON.stringify(deletedIds));
   
   updateStats();
   renderTable();
@@ -3697,7 +3698,6 @@ function importShareData(event) {
 
 // ==================== 新增：成员邮箱管理 ====================
 // 自定义成员邮箱（本地存储，同事导入的新成员）
-let customEmails = JSON.parse(localStorage.getItem('customEmails') || '{}');
 
 // 获取完整的工程师邮箱列表（内置 + 自定义）
 function getAllEmails() {
@@ -4107,12 +4107,15 @@ function submitNewProject() {
   
   // 保存到本地
   localEdits[newId] = newProject;
+  newProjects.push(newProject);
   localStorage.setItem('projectEdits', JSON.stringify(localEdits));
+  localStorage.setItem('newProjects', JSON.stringify(newProjects));
   
   updateStats();
   renderTable();
   initResourceSearch();  // 刷新人员检索下拉列表
   showSaved();
+  collabMarkDirty();  // 触发同步到服务器
   
   document.querySelector('.modal-overlay').remove();
   alert(`✅ 已添加新项目：${projName} - ${resType}（${resPerson}）`);
