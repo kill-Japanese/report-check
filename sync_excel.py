@@ -29,6 +29,87 @@ HTML_FILE = os.path.join(BASE_DIR, '项目延期点检表.html')
 COL_ARCHIVED = 0   # 第1列(A列)用于存放归档标志（原U列/20，改为A列/0，避免覆盖公式）
 COL_DELETED = 1    # 第2列(B列)用于存放删除标志（原V列/21，改为B列/1，软删除避免合并单元格破坏）
 
+# ==================== Git 仓库保障 ====================
+
+def ensure_git_repo() -> tuple[bool, str]:
+    """确保 Git 仓库存在并且配置正确（Render 部署环境保障）
+    
+    【关键修复】Render 部署时可能不会保留 .git 目录，
+    导致所有 Git 操作失败，数据无法持久化。
+    
+    修复策略：
+    1. 检查 .git 目录是否存在
+    2. 如果不存在，尝试从环境变量或已知配置初始化 Git 仓库
+    3. 检查 remote origin 是否配置正确
+    4. 确保用户信息配置正确（用于 commit）
+    """
+    git_dir = os.path.join(BASE_DIR, '.git')
+    
+    try:
+        # 1. 检查 .git 目录是否存在
+        if not os.path.exists(git_dir):
+            print(f"[Git] .git 目录不存在，正在初始化...")
+            
+            # 初始化 Git 仓库
+            init = subprocess.run(
+                ['git', 'init'],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+            )
+            if init.returncode != 0:
+                return False, f'Git 初始化失败: {init.stderr[:200]}'
+            
+            # 尝试从环境变量获取 remote URL
+            remote_url = os.environ.get('GIT_REMOTE_URL', '')
+            if not remote_url:
+                # 尝试从常见的 Render 环境变量中推断
+                # Render 会设置一些环境变量，但不包含完整的 repo URL
+                # 这里使用一个默认的占位符，用户需要在环境变量中配置
+                print(f"[Git] 警告: 未设置 GIT_REMOTE_URL 环境变量")
+            
+            if remote_url:
+                subprocess.run(
+                    ['git', 'remote', 'add', 'origin', remote_url],
+                    capture_output=True, cwd=BASE_DIR, timeout=10
+                )
+                print(f"[Git] 已设置 remote origin: {remote_url[:50]}...")
+        else:
+            # .git 存在，检查 remote 配置
+            remote_check = subprocess.run(
+                ['git', 'remote', '-v'],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=5
+            )
+            if 'origin' not in remote_check.stdout:
+                print(f"[Git] 警告: 未配置 remote origin")
+        
+        # 2. 确保 Git 用户信息配置正确（用于 commit）
+        subprocess.run(
+            ['git', 'config', 'user.email', 'server@report-check.local'],
+            capture_output=True, cwd=BASE_DIR, timeout=5
+        )
+        subprocess.run(
+            ['git', 'config', 'user.name', 'Report Check Server'],
+            capture_output=True, cwd=BASE_DIR, timeout=5
+        )
+        
+        # 3. 确保分支名为 main
+        branch = subprocess.run(
+            ['git', 'branch', '--show-current'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=5
+        )
+        current_branch = branch.stdout.strip()
+        if current_branch and current_branch != 'main':
+            subprocess.run(
+                ['git', 'branch', '-M', 'main'],
+                capture_output=True, cwd=BASE_DIR, timeout=5
+            )
+            print(f"[Git] 已将分支 {current_branch} 重命名为 main")
+        
+        return True, 'Git 仓库就绪'
+        
+    except Exception as e:
+        return False, f'Git 仓库初始化失败: {str(e)}'
+
+
 # ==================== Git 操作 ====================
 
 def git_pull() -> tuple[bool, str]:
@@ -45,6 +126,10 @@ def git_pull() -> tuple[bool, str]:
     所以强制用远程覆盖是最安全可靠的方案。
     """
     try:
+        # 【关键修复】先确保 Git 仓库存在（Render 部署环境保障）
+        ensure_ok, ensure_msg = ensure_git_repo()
+        if not ensure_ok:
+            return False, f'Git仓库不可用: {ensure_msg}'
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
 
@@ -105,6 +190,10 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
          确保网络故障后可以重试推送。
     """
     try:
+        # 【关键修复】先确保 Git 仓库存在（Render 部署环境保障）
+        ensure_ok, ensure_msg = ensure_git_repo()
+        if not ensure_ok:
+            return False, f'Git仓库不可用: {ensure_msg}'
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
 
@@ -666,13 +755,55 @@ def full_sync(operation: str = '未知操作') -> tuple[bool, str]:
             collab['checked'] = {}
             save_collab_data(collab)
         else:
-            messages.append('无需要同步的变更')
+            # 【关键修复】即使没有待处理的协作数据，也要检查是否有其他文件变更
+            # （比如超声波户表脚本.xlsx 被外部直接修改、报表重新生成等）
+            # 确保所有变更都能被推送到 GitHub，避免重新部署后丢失
+            has_file_changes = False
+            try:
+                status = subprocess.run(
+                    ['git', 'status', '--porcelain',
+                     '超声波户表脚本.xlsx', '用户管理.xlsx',
+                     '项目延期点检表.html', 'data/'],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+                )
+                if status.stdout.strip():
+                    has_file_changes = True
+                    print(f"[同步] 检测到非协作数据的文件变更:\n{status.stdout.strip()}")
+            except:
+                pass
+            
+            if has_file_changes:
+                messages.append('检测到文件变更，正在同步...')
+                # 重新生成报表（确保报表是最新的）
+                ok, msg = regenerate_report()
+                messages.append(msg)
+                if not ok:
+                    messages.append('警告：报表生成失败')
+                # 尝试推送所有变更
+                push_ok, push_msg = git_push(f'{operation}，文件变更同步')
+                messages.append(push_msg)
+                if not push_ok:
+                    messages.append('错误：GitHub推送失败')
+                    return False, '；'.join(messages)
+            else:
+                messages.append('无需要同步的变更')
     
     return True, '；'.join(messages)
 
 def startup_sync() -> tuple[bool, str]:
-    """服务器启动时同步：拉取最新 + 生成报表"""
+    """服务器启动时同步：确保Git仓库 + 拉取最新 + 生成报表
+    
+    【关键修复】Render 部署时 .git 目录可能不存在，
+    必须先确保 Git 仓库可用，再进行拉取操作。
+    """
     messages = []
+    
+    # 先确保 Git 仓库存在（Render 部署环境保障）
+    ensure_ok, ensure_msg = ensure_git_repo()
+    messages.append(ensure_msg)
+    if not ensure_ok:
+        messages.append('警告：Git仓库不可用，将无法同步数据到GitHub')
+    
     ok, msg = git_pull()
     messages.append(msg)
     ok2, msg2 = regenerate_report()

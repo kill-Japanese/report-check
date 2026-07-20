@@ -32,3 +32,5 @@
 [2026-07-20 17:43:33] USER_CREATE | 用户: admin | 创建用户: e2e_user1, 角色: editor
 [2026-07-20 17:43:35] USER_CREATE | 用户: admin | 创建用户: e2e_user2, 角色: viewer
 [2026-07-20 23:48:39] USER_CREATE | 用户: admin | 创建用户: testuser_1243, 角色: viewer
+[2026-07-20 23:48:41] USER_CREATE | 用户: admin | 创建用户: persist_test_1243, 角色: viewer
+[2026-07-20 23:53:00] USER_CREATE | 用户: admin | 创建用户: persist_test_1273, 角色: viewer

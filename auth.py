@@ -149,6 +149,51 @@ def _audit_log(action: str, username: str, detail: str = ''):
 
 # ==================== Git 同步工具 ====================
 
+def _ensure_git_repo() -> tuple[bool, str]:
+    """确保 Git 仓库存在并且配置正确（Render 部署环境保障）
+    
+    与 sync_excel.ensure_git_repo 功能一致，避免循环导入。
+    """
+    git_dir = os.path.join(BASE_DIR, '.git')
+    try:
+        if not os.path.exists(git_dir):
+            print(f"[Auth Git] .git 目录不存在，正在初始化...")
+            init = subprocess.run(
+                ['git', 'init'],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+            )
+            if init.returncode != 0:
+                return False, f'Git 初始化失败: {init.stderr[:200]}'
+            remote_url = os.environ.get('GIT_REMOTE_URL', '')
+            if remote_url:
+                subprocess.run(
+                    ['git', 'remote', 'add', 'origin', remote_url],
+                    capture_output=True, cwd=BASE_DIR, timeout=10
+                )
+                print(f"[Auth Git] 已设置 remote origin: {remote_url[:50]}...")
+        subprocess.run(
+            ['git', 'config', 'user.email', 'server@report-check.local'],
+            capture_output=True, cwd=BASE_DIR, timeout=5
+        )
+        subprocess.run(
+            ['git', 'config', 'user.name', 'Report Check Server'],
+            capture_output=True, cwd=BASE_DIR, timeout=5
+        )
+        branch = subprocess.run(
+            ['git', 'branch', '--show-current'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=5
+        )
+        current_branch = branch.stdout.strip()
+        if current_branch and current_branch != 'main':
+            subprocess.run(
+                ['git', 'branch', '-M', 'main'],
+                capture_output=True, cwd=BASE_DIR, timeout=5
+            )
+        return True, 'Git 仓库就绪'
+    except Exception as e:
+        return False, f'Git 仓库初始化失败: {str(e)}'
+
+
 def _git_push(message: str) -> tuple[bool, str]:
     """提交并推送到 GitHub（带失败重试机制）
     
@@ -159,6 +204,10 @@ def _git_push(message: str) -> tuple[bool, str]:
     3. 只检查用户管理.xlsx 和 data/ 的变更状态，避免被其他文件干扰
     """
     try:
+        # 【关键修复】先确保 Git 仓库存在（Render 部署环境保障）
+        ensure_ok, ensure_msg = _ensure_git_repo()
+        if not ensure_ok:
+            return False, f'Git仓库不可用: {ensure_msg}'
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
 
@@ -329,6 +378,9 @@ def init_default_users():
     致命bug历史：之前 push=True 会导致当用户管理.xlsx不存在时，
     创建只有admin的空表并推送到远程，覆盖所有已有用户数据！
     """
+    # ===== 修复0：先确保Git仓库存在（Render部署环境保障） =====
+    _ensure_git_repo()
+    
     # ===== 修复1：先尝试从远程恢复 =====
     if not os.path.exists(USERS_EXCEL):
         try:
@@ -691,6 +743,8 @@ def startup_sync() -> tuple[bool, str]:
     因为远程 GitHub 是唯一可信的持久化数据源。
     """
     try:
+        # 【关键修复】先确保 Git 仓库存在（Render 部署环境保障）
+        _ensure_git_repo()
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
 
@@ -762,6 +816,8 @@ def sync_to_github(message: str = '同步数据') -> tuple[bool, str]:
     """
     import subprocess
     try:
+        # 【关键修复】先确保 Git 仓库存在（Render 部署环境保障）
+        _ensure_git_repo()
         # 检查是否有 git 仓库
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'

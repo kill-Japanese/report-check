@@ -8,3 +8,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      # Git 配置（Render 环境中确保 Git 可用）
+      - key: GIT_COMMITTER_NAME
+        value: Report Check Server
+      - key: GIT_COMMITTER_EMAIL
+        value: server@report-check.local
