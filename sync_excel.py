@@ -23,8 +23,11 @@ EXCEL_FILE = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
 HTML_FILE = os.path.join(BASE_DIR, '项目延期点检表.html')
 
 # Excel 列配置（0-based 索引）
-COL_ARCHIVED = 20  # 第21列(U列)用于存放归档标志
-COL_DELETED = 21   # 第22列(V列)用于存放删除标志（软删除，避免合并单元格破坏）
+# 【严重修复】原使用U列(20)/V列(21)会覆盖延期计算公式，
+# 导致Excel延期工时计算错误。改为使用完全空闲的A列(0)和B列(1)。
+# 注意：openpyxl写入时使用 1-based 列号，所以 COL_ARCHIVED+1 = 第2列(B列)
+COL_ARCHIVED = 0   # 第1列(A列)用于存放归档标志（原U列/20，改为A列/0，避免覆盖公式）
+COL_DELETED = 1    # 第2列(B列)用于存放删除标志（原V列/21，改为B列/1，软删除避免合并单元格破坏）
 
 # ==================== Git 操作 ====================
 

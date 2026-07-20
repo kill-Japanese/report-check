@@ -1378,9 +1378,16 @@ window.CURRENT_USER = {user_info};
             if not self.require_permission('edit'):
                 return
             all_data = load_data()
-            for key in ['localEdits', 'notes', 'checked', 'archived', 'customEmails']:
+            # 【关键修复】archived 使用全量替换，不使用 .update()
+            # 原因：恢复归档时前端从 archived 中删除了键，.update() 无法感知"删除键"操作，
+            # 导致Excel U列的"已归档"永远不会被清除，重置时项目又回到归档栏
+            for key in ['localEdits', 'notes', 'checked', 'customEmails']:
                 if key in data:
                     all_data[key].update(data[key])
+            # archived 全量替换：前端发送的是完整的待归档列表
+            # （前端没有的键 = 取消归档，必须从服务器端也删除）
+            if 'archived' in data:
+                all_data['archived'] = data['archived']
             if 'newProjects' in data:
                 existing_ids = {p.get('id') for p in all_data['newProjects']}
                 for p in data['newProjects']:

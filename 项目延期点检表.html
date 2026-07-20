@@ -989,6 +989,8 @@ async function collabSyncToServer() {
       collabLastUpdate = result.lastUpdate || collabLastUpdate;
       collabDirty = false;
       // 同步成功后清空已提交的新增项目和删除ID
+      // 注意：archived/localEdits/notes/checked 不清空，因为它们是前端展示状态
+      // （后端已正确处理"取消归档"语义：前端没有的键意味着取消归档）
       if (newProjects.length > 0) {
         newProjects = [];
         localStorage.setItem('newProjects', JSON.stringify(newProjects));

@@ -16,13 +16,16 @@ ENV/
 users.json
 sessions.json
 rate_limit.json
-协作数据.json
+# 【严重修复】只忽略根目录的协作数据.json，不忽略 data/ 下的
+# 否则 push 失败后重新部署，协作数据会丢失（因为 data/ 不持久化）
+./协作数据.json
 audit.log
 *.log
 # data/ 目录用于持久化，会提交到 GitHub（除了会话和限流数据）
 !data/
 data/sessions.json
 data/rate_limit.json
+data/audit.log
 
 # 上传文件
 .uploads/
@@ -46,6 +49,14 @@ Thumbs.db
 项目延期点检表.xlsx
 任务计划表_*.csv
 超声波户表脚本_*.xls
+
+# 【修复】忽略备份文件，避免大量垃圾文件进入git
+*.xlsx.backup
+*.xlsx.*_backup
+*.xlsx.e2e_backup
+*.xlsx.test_backup*
+*.backup
+*.py.backup
 
 # TRAE 临时文件
 .trae-html-share-packages/

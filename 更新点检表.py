@@ -214,16 +214,17 @@ for idx in range(3, len(df)):
         proj_days = calc_days(current_end, True)
         res_days = calc_days(res_end, True)
         
-        # 读取归档标志（第21列，U列）
+        # 【严重修复】读取归档标志（第1列，A列）—— 原使用U列(20)会覆盖延期计算公式
         archived_flag = ''
-        if 20 < len(row) and pd.notna(row[20]):
-            archived_flag = str(row[20]).strip()
+        if 0 < len(row) and pd.notna(row[0]):
+            archived_flag = str(row[0]).strip()
         is_archived = archived_flag in ('已归档', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y')
         
-        # 读取删除标志（第22列，V列）- 软删除，已删除的项目不加入列表
+        # 【严重修复】读取删除标志（第2列，B列）—— 原使用V列(21)会覆盖延期计算公式
+        # 软删除，已删除的项目不加入列表
         deleted_flag = ''
-        if 21 < len(row) and pd.notna(row[21]):
-            deleted_flag = str(row[21]).strip()
+        if 1 < len(row) and pd.notna(row[1]):
+            deleted_flag = str(row[1]).strip()
         is_deleted = deleted_flag in ('已删除', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y')
         if is_deleted:
             continue  # 跳过已软删除的项目
@@ -1399,6 +1400,8 @@ async function collabSyncToServer() {
       collabLastUpdate = result.lastUpdate || collabLastUpdate;
       collabDirty = false;
       // 同步成功后清空已提交的新增项目和删除ID
+      // 注意：archived/localEdits/notes/checked 不清空，因为它们是前端展示状态
+      // （后端已正确处理"取消归档"语义：前端没有的键意味着取消归档）
       if (newProjects.length > 0) {
         newProjects = [];
         localStorage.setItem('newProjects', JSON.stringify(newProjects));
