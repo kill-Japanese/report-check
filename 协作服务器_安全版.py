@@ -17,6 +17,8 @@ import os
 import sys
 import socket
 import urllib.parse
+import urllib.request
+import urllib.error
 import secrets
 from datetime import datetime
 
@@ -74,7 +76,7 @@ NO_DATA_PAGE = '''<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>项目点检表 - 上传数据</title>
+<title>项目点检表 - 数据导入</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -90,19 +92,40 @@ NO_DATA_PAGE = '''<!DOCTYPE html>
     background: #fff;
     border-radius: 16px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    padding: 48px 40px;
+    padding: 40px 32px;
     width: 100%;
-    max-width: 520px;
+    max-width: 560px;
     text-align: center;
   }
-  .icon { font-size: 64px; margin-bottom: 20px; }
-  h1 { font-size: 28px; color: #333; margin-bottom: 12px; }
-  .subtitle { color: #888; margin-bottom: 32px; font-size: 15px; line-height: 1.6; }
+  .icon { font-size: 56px; margin-bottom: 12px; }
+  h1 { font-size: 26px; color: #333; margin-bottom: 8px; }
+  .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; line-height: 1.6; }
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e2e8f0;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #718096;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+  }
+  .tab.active { color: #667eea; border-bottom-color: #667eea; }
+  .tab:hover:not(.active) { color: #4a5568; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
   .upload-area {
     border: 2px dashed #cbd5e0;
     border-radius: 12px;
-    padding: 40px 20px;
-    margin-bottom: 20px;
+    padding: 32px 16px;
+    margin-bottom: 16px;
     cursor: pointer;
     transition: all 0.3s;
     background: #f7fafc;
@@ -111,63 +134,126 @@ NO_DATA_PAGE = '''<!DOCTYPE html>
     border-color: #667eea;
     background: #f0f4ff;
   }
-  .upload-area p { color: #718096; margin-top: 8px; font-size: 14px; }
-  .upload-area strong { color: #4a5568; font-size: 16px; }
+  .upload-area p { color: #718096; margin-top: 6px; font-size: 13px; }
+  .upload-area strong { color: #4a5568; font-size: 15px; }
   input[type=file] { display: none; }
+  .input-group {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  input[type=text] {
+    flex: 1;
+    padding: 11px 14px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type=text]:focus { border-color: #667eea; }
   .btn {
     display: inline-block;
-    padding: 12px 32px;
+    padding: 11px 24px;
     border-radius: 8px;
     border: none;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
     text-decoration: none;
+    white-space: nowrap;
   }
   .btn-primary {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: #fff;
   }
   .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(102,126,234,0.4); }
-  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn-secondary { background: #e2e8f0; color: #4a5568; margin-right: 10px; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-secondary { background: #e2e8f0; color: #4a5568; }
+  .btn-secondary:hover { background: #cbd5e0; }
+  .btn-block { width: 100%; padding: 14px; font-size: 15px; }
+  .quick-action {
+    background: #f7fafc;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    text-align: left;
+    transition: all 0.2s;
+  }
+  .quick-action:hover { border-color: #667eea; background: #f0f4ff; }
+  .quick-action h3 { font-size: 15px; color: #2d3748; margin-bottom: 4px; }
+  .quick-action p { font-size: 13px; color: #718096; margin-bottom: 12px; }
   .status {
-    margin-top: 20px;
-    padding: 12px 16px;
+    margin-top: 16px;
+    padding: 11px 14px;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 13px;
     display: none;
+    text-align: left;
   }
   .status.success { background: #f0fff4; color: #22543d; display: block; }
   .status.error { background: #fff5f5; color: #742a2a; display: block; }
   .status.info { background: #ebf8ff; color: #2a4365; display: block; }
   .logout {
-    margin-top: 24px;
+    margin-top: 20px;
     color: #a0aec0;
-    font-size: 13px;
+    font-size: 12px;
   }
   .logout a { color: #667eea; text-decoration: none; }
+  .hint {
+    font-size: 12px;
+    color: #a0aec0;
+    margin-top: 6px;
+    text-align: left;
+  }
 </style>
 </head>
 <body>
 <div class="upload-box">
   <div class="icon">📊</div>
-  <h1>欢迎使用项目点检系统</h1>
-  <p class="subtitle">请上传「超声波户表脚本」Excel 文件<br>系统将自动生成延期点检报表</p>
-  
-  <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-    <strong>点击选择文件</strong> 或拖拽到此处
-    <p>支持 .xlsx / .xls 格式（超声波户表脚本）</p>
+  <h1>项目点检系统</h1>
+  <p class="subtitle">选择一种方式导入「超声波户表脚本」Excel 数据</p>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="github">🔗 GitHub 链接</div>
+    <div class="tab" data-tab="default">📦 默认数据</div>
+    <div class="tab" data-tab="upload">📁 本地上传</div>
   </div>
-  <input type="file" id="fileInput" accept=".xlsx,.xls">
-  
+
+  <!-- GitHub 链接导入 -->
+  <div class="tab-panel active" id="panel-github">
+    <div class="input-group">
+      <input type="text" id="githubUrl" placeholder="粘贴 GitHub 文件链接（如 https://github.com/xxx/xxx/blob/main/xxx.xlsx）">
+      <button class="btn btn-primary" id="githubBtn" onclick="fetchFromGithub()">拉取并生成</button>
+    </div>
+    <div class="hint">💡 支持 github.com/blob/ 链接和 raw.githubusercontent.com 链接</div>
+  </div>
+
+  <!-- 默认数据 -->
+  <div class="tab-panel" id="panel-default">
+    <div class="quick-action">
+      <h3>使用仓库内置 Excel</h3>
+      <p>直接使用代码仓库中已有的「超声波户表脚本.xlsx」生成报表</p>
+      <button class="btn btn-primary btn-block" id="defaultBtn" onclick="generateDefault()">⚡ 一键生成报表</button>
+    </div>
+  </div>
+
+  <!-- 本地上传 -->
+  <div class="tab-panel" id="panel-upload">
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+      <strong>点击选择文件</strong> 或拖拽到此处
+      <p>支持 .xlsx / .xls 格式</p>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls">
+    <button class="btn btn-primary btn-block" id="uploadBtn" onclick="uploadFile()" disabled>
+      🚀 上传并生成报表
+    </button>
+  </div>
+
   <div id="status" class="status"></div>
-  
-  <button class="btn btn-primary" id="uploadBtn" onclick="uploadFile()" disabled>
-    🚀 上传并生成报表
-  </button>
-  
+
   <div class="logout">
     <a href="#" onclick="logout()">退出登录</a>
   </div>
@@ -175,10 +261,86 @@ NO_DATA_PAGE = '''<!DOCTYPE html>
 
 <script>
 let selectedFile = null;
+const statusEl = document.getElementById('status');
+
+// Tab 切换
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+function showStatus(msg, type) {
+  statusEl.className = 'status ' + type;
+  statusEl.textContent = msg;
+}
+
+function setButtonsDisabled(disabled) {
+  document.getElementById('githubBtn').disabled = disabled;
+  document.getElementById('defaultBtn').disabled = disabled;
+  document.getElementById('uploadBtn').disabled = disabled || !selectedFile;
+}
+
+// 从 GitHub 拉取
+async function fetchFromGithub() {
+  const url = document.getElementById('githubUrl').value.trim();
+  if (!url) {
+    showStatus('❌ 请输入 GitHub 链接', 'error');
+    return;
+  }
+  setButtonsDisabled(true);
+  showStatus('⏳ 正在从 GitHub 拉取文件并生成报表...', 'info');
+  try {
+    const res = await fetch('/api/fetch-github', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showStatus('✅ 报表生成成功！正在跳转...', 'success');
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showStatus('❌ ' + (data.message || '失败'), 'error');
+      setButtonsDisabled(false);
+    }
+  } catch (e) {
+    showStatus('❌ 请求失败：' + e.message, 'error');
+    setButtonsDisabled(false);
+  }
+}
+
+// 使用默认 Excel 生成
+async function generateDefault() {
+  setButtonsDisabled(true);
+  showStatus('⏳ 正在使用默认数据生成报表...', 'info');
+  try {
+    const res = await fetch('/api/generate-default', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (data.success) {
+      showStatus('✅ 报表生成成功！正在跳转...', 'success');
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showStatus('❌ ' + (data.message || '失败'), 'error');
+      setButtonsDisabled(false);
+    }
+  } catch (e) {
+    showStatus('❌ 请求失败：' + e.message, 'error');
+    setButtonsDisabled(false);
+  }
+}
+
+// 本地上传
 const uploadArea = document.getElementById('uploadArea');
 const fileInput = document.getElementById('fileInput');
 const uploadBtn = document.getElementById('uploadBtn');
-const statusEl = document.getElementById('status');
 
 fileInput.addEventListener('change', (e) => {
   if (e.target.files.length > 0) {
@@ -203,37 +365,37 @@ uploadArea.addEventListener('drop', (e) => {
   }
 });
 
-function showStatus(msg, type) {
-  statusEl.className = 'status ' + type;
-  statusEl.textContent = msg;
-}
-
 async function uploadFile() {
   if (!selectedFile) return;
-  uploadBtn.disabled = true;
+  setButtonsDisabled(true);
   showStatus('⏳ 正在上传并生成报表，请稍候...', 'info');
-  
   const formData = new FormData();
   formData.append('file', selectedFile);
-  
   try {
     const res = await fetch('/api/upload', {
       method: 'POST',
       body: formData
     });
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { success: false, message: '服务器返回格式错误' }; }
     if (data.success) {
       showStatus('✅ 报表生成成功！正在跳转...', 'success');
       setTimeout(() => location.reload(), 1000);
     } else {
       showStatus('❌ ' + (data.message || '生成失败'), 'error');
-      uploadBtn.disabled = false;
+      setButtonsDisabled(false);
     }
   } catch (e) {
     showStatus('❌ 上传失败：' + e.message, 'error');
-    uploadBtn.disabled = false;
+    setButtonsDisabled(false);
   }
 }
+
+// 回车触发 GitHub 拉取
+document.getElementById('githubUrl').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') fetchFromGithub();
+});
 
 async function logout() {
   await fetch('/api/logout', { method: 'POST' });
@@ -941,6 +1103,144 @@ window.CURRENT_USER = {user_info};
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+
+        # 对于文件上传，先解析 multipart（不调用 read_body，避免二进制数据解码崩溃）
+        if path == '/api/upload':
+            if not self.require_permission('save'):
+                return
+            try:
+                upload = self.parse_multipart()
+                if not upload:
+                    self.send_json({'success': False, 'message': '请选择要上传的 Excel 文件'}, 400)
+                    return
+                filename = upload['filename']
+                file_data = upload['data']
+                if not filename.lower().endswith(('.xlsx', '.xls')):
+                    self.send_json({'success': False, 'message': '只支持 .xlsx 或 .xls 格式'}, 400)
+                    return
+                if len(file_data) == 0:
+                    self.send_json({'success': False, 'message': '文件为空'}, 400)
+                    return
+                # 保存上传的 Excel
+                excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
+                with open(excel_path, 'wb') as f:
+                    f.write(file_data)
+                # 调用主脚本生成报表
+                import subprocess
+                result = subprocess.run(
+                    [sys.executable, os.path.join(BASE_DIR, '更新点检表.py'), excel_path],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=120
+                )
+                if result.returncode != 0:
+                    error_msg = (result.stderr or result.stdout or '生成失败')[-500:]
+                    self.send_json({'success': False, 'message': f'报表生成失败：{error_msg}'}, 500)
+                    return
+                user = self.get_current_user()
+                auth._audit_log('REPORT_GENERATE', user['username'], f'上传文件 {filename} 生成报表')
+                self.send_json({'success': True, 'message': '报表生成成功'})
+                return
+            except subprocess.TimeoutExpired:
+                self.send_json({'success': False, 'message': '生成超时（超过2分钟），请稍后重试'}, 500)
+                return
+            except Exception as e:
+                import traceback
+                self.send_json({'success': False, 'message': f'上传失败：{str(e)}'}, 500)
+                return
+
+        # --- 从 GitHub 拉取 Excel 并生成报表 ---
+        if path == '/api/fetch-github':
+            if not self.require_permission('save'):
+                return
+            data = self.read_body()
+            github_url = data.get('url', '').strip()
+            if not github_url:
+                self.send_json({'success': False, 'message': '请输入 GitHub 文件链接'}, 400)
+                return
+            # 验证 URL 格式（支持 github.com 和 raw.githubusercontent.com）
+            if 'github.com' not in github_url and 'raw.githubusercontent.com' not in github_url:
+                self.send_json({'success': False, 'message': '请输入有效的 GitHub 链接'}, 400)
+                return
+            # 转换为 raw 链接
+            raw_url = github_url
+            if 'github.com' in github_url and '/blob/' in github_url:
+                raw_url = github_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+            try:
+                req = urllib.request.Request(raw_url, headers={
+                    'User-Agent': 'Mozilla/5.0 (Report-Server)'
+                })
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    file_data = resp.read()
+                if len(file_data) == 0:
+                    self.send_json({'success': False, 'message': '下载的文件为空'}, 400)
+                    return
+                # 检查文件大小（最大 20MB）
+                if len(file_data) > 20 * 1024 * 1024:
+                    self.send_json({'success': False, 'message': '文件过大（超过 20MB）'}, 400)
+                    return
+                # 从 URL 提取文件名
+                filename = raw_url.split('/')[-1].split('?')[0]
+                if not filename.lower().endswith(('.xlsx', '.xls')):
+                    self.send_json({'success': False, 'message': '链接必须指向 .xlsx 或 .xls 文件'}, 400)
+                    return
+                # 保存
+                excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
+                with open(excel_path, 'wb') as f:
+                    f.write(file_data)
+                # 生成报表
+                import subprocess
+                result = subprocess.run(
+                    [sys.executable, os.path.join(BASE_DIR, '更新点检表.py'), excel_path],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=120
+                )
+                if result.returncode != 0:
+                    error_msg = (result.stderr or result.stdout or '生成失败')[-500:]
+                    self.send_json({'success': False, 'message': f'报表生成失败：{error_msg}'}, 500)
+                    return
+                user = self.get_current_user()
+                auth._audit_log('REPORT_GENERATE', user['username'], f'从 GitHub 拉取 {filename} 生成报表')
+                self.send_json({'success': True, 'message': '报表生成成功'})
+                return
+            except subprocess.TimeoutExpired:
+                self.send_json({'success': False, 'message': '生成超时（超过2分钟），请稍后重试'}, 500)
+                return
+            except urllib.error.URLError as e:
+                self.send_json({'success': False, 'message': f'下载失败：{str(e)}'}, 500)
+                return
+            except Exception as e:
+                import traceback
+                self.send_json({'success': False, 'message': f'处理失败：{str(e)}'}, 500)
+                return
+
+        # --- 使用仓库内默认 Excel 生成报表 ---
+        if path == '/api/generate-default':
+            if not self.require_permission('save'):
+                return
+            excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
+            if not os.path.exists(excel_path):
+                self.send_json({'success': False, 'message': '仓库中未找到默认 Excel 文件'}, 404)
+                return
+            try:
+                import subprocess
+                result = subprocess.run(
+                    [sys.executable, os.path.join(BASE_DIR, '更新点检表.py'), excel_path],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=120
+                )
+                if result.returncode != 0:
+                    error_msg = (result.stderr or result.stdout or '生成失败')[-500:]
+                    self.send_json({'success': False, 'message': f'报表生成失败：{error_msg}'}, 500)
+                    return
+                user = self.get_current_user()
+                auth._audit_log('REPORT_GENERATE', user['username'], '使用仓库默认 Excel 生成报表')
+                self.send_json({'success': True, 'message': '报表生成成功'})
+                return
+            except subprocess.TimeoutExpired:
+                self.send_json({'success': False, 'message': '生成超时（超过2分钟），请稍后重试'}, 500)
+                return
+            except Exception as e:
+                self.send_json({'success': False, 'message': f'处理失败：{str(e)}'}, 500)
+                return
+
+        # 其他接口：读取 JSON body
         data = self.read_body()
 
         # --- 登录（公开）---
@@ -998,48 +1298,6 @@ window.CURRENT_USER = {user_info};
             self.end_headers()
             self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
             return
-
-        # --- 上传 Excel 并生成报表（需 save 权限）---
-        if path == '/api/upload':
-            if not self.require_permission('save'):
-                return
-            try:
-                upload = self.parse_multipart()
-                if not upload:
-                    self.send_json({'success': False, 'message': '请选择要上传的 Excel 文件'}, 400)
-                    return
-                filename = upload['filename']
-                file_data = upload['data']
-                if not filename.lower().endswith(('.xlsx', '.xls')):
-                    self.send_json({'success': False, 'message': '只支持 .xlsx 或 .xls 格式'}, 400)
-                    return
-                if len(file_data) == 0:
-                    self.send_json({'success': False, 'message': '文件为空'}, 400)
-                    return
-                # 保存上传的 Excel
-                excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
-                with open(excel_path, 'wb') as f:
-                    f.write(file_data)
-                # 调用主脚本生成报表
-                import subprocess
-                result = subprocess.run(
-                    [sys.executable, os.path.join(BASE_DIR, '更新点检表.py'), excel_path],
-                    capture_output=True, text=True, cwd=BASE_DIR, timeout=120
-                )
-                if result.returncode != 0:
-                    error_msg = result.stderr[-500:] if result.stderr else '生成失败'
-                    self.send_json({'success': False, 'message': f'报表生成失败：{error_msg}'}, 500)
-                    return
-                user = self.get_current_user()
-                auth._audit_log('REPORT_GENERATE', user['username'], f'上传文件 {filename} 生成报表')
-                self.send_json({'success': True, 'message': '报表生成成功'})
-                return
-            except subprocess.TimeoutExpired:
-                self.send_json({'success': False, 'message': '生成超时，请稍后重试'}, 500)
-                return
-            except Exception as e:
-                self.send_json({'success': False, 'message': f'上传失败：{str(e)}'}, 500)
-                return
 
         # --- 修改密码（需登录）---
         if path == '/api/change-password':
