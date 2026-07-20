@@ -1,0 +1,25 @@
+# ============================================================
+# Cloudflare Tunnel 配置模板
+# 使用方法：
+#   1. 安装 cloudflared: brew install cloudflared
+#   2. 登录: cloudflared tunnel login
+#   3. 创建隧道: cloudflared tunnel create report-server
+#   4. 把下面的 你的隧道ID 替换为实际 ID
+#   5. 配置路由: cloudflared tunnel route dns report-server report
+#   6. 启动: cloudflared tunnel --config config.yml run
+# ============================================================
+
+tunnel: 你的隧道ID
+credentials-file: /home/你的用户名/.cloudflared/你的隧道ID.json
+
+ingress:
+  # 协作服务器
+  - hostname: report.你的域名.com
+    service: http://localhost:8080
+
+  # 邮件服务（如果启用）
+  - hostname: mail.你的域名.com
+    service: http://localhost:8765
+
+  # 默认拒绝
+  - service: http_status:404

@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: report-check
+    env: python
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: python 协作服务器_安全版.py 10000
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0

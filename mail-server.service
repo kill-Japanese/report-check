@@ -1,0 +1,23 @@
+# ============================================================
+# 邮件服务 systemd 配置
+# 用法：
+#   sudo cp mail-server.service /etc/systemd/system/
+#   sudo systemctl enable --now mail-server
+# ============================================================
+
+[Unit]
+Description=项目点检表 - 邮件发送服务
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/report
+ExecStart=/usr/bin/python3 /home/ubuntu/report/mail_server.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

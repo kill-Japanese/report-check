@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# 数据文件（敏感，不提交）
+users.json
+sessions.json
+rate_limit.json
+协作数据.json
+audit.log
+*.log
+
+# 上传文件
+.uploads/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+.deps_ok
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 临时文件
+.trae/
+
+# 生成的报表文件
+项目延期点检表.html
+项目延期点检表.xlsx
+任务计划表_*.csv
+超声波户表脚本_*.xls
+
+# TRAE 临时文件
+.trae-html-share-packages/

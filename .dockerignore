@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.github/
+.uploads/
+协作数据.json
+cron.log
+collab.log
+mail.log
+cloudflare.log
+*.log
+.deps_ok
+node_modules/
+.env
