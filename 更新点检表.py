@@ -1257,22 +1257,43 @@ let deletedIds = JSON.parse(localStorage.getItem('deletedIds') || '[]');
 let customEmails = JSON.parse(localStorage.getItem('customEmails') || '{}');
 let newProjects = JSON.parse(localStorage.getItem('newProjects') || '[]');
 
-// 【修复】从 RAW_DATA 同步 Excel 中的归档标志到 archived 对象
+// 【修复】从 RAW_DATA 同步 Excel 中的归档标志到 archived 对象（双向同步）
 // 后端写入Excel的归档/删除状态需要同步到前端，否则归档看板看不到、删除项目会恢复
 function syncFromExcel() {
   if (typeof RAW_DATA === 'undefined' || !RAW_DATA.allProjects) return;
   let syncedCount = 0;
+  let removedCount = 0;
+  
+  // 构建 Excel 中已归档项目的 ID 集合
+  const excelArchivedIds = new Set();
   RAW_DATA.allProjects.forEach(function(p) {
-    // 同步归档状态：Excel中已归档但前端archived没有的，补充进去
-    if (p['已归档'] && !archived[p.id]) {
-      archived[p.id] = { time: new Date().toISOString(), project: p['项目'], fromExcel: true };
-      syncedCount++;
+    if (p['已归档']) {
+      excelArchivedIds.add(p.id);
+      // 正向同步：Excel中已归档但前端archived没有的，补充进去
+      if (!archived[p.id]) {
+        archived[p.id] = { time: new Date().toISOString(), project: p['项目'], fromExcel: true };
+        syncedCount++;
+      }
     }
   });
+  
+  // 反向同步：Excel中未归档但前端archived中有的（且来源是Excel的），从archived中移除
+  // （用户在当前会话中新归档的项目没有 fromExcel 标记，不会被误删）
+  Object.keys(archived).forEach(function(pid) {
+    const numPid = parseInt(pid);
+    if (!excelArchivedIds.has(numPid) && !excelArchivedIds.has(pid)) {
+      // Excel中没有这个归档，检查是否是从Excel同步来的
+      if (archived[pid].fromExcel) {
+        delete archived[pid];
+        removedCount++;
+      }
+    }
+  });
+  
   // 同步回 localStorage
   localStorage.setItem('projectArchived', JSON.stringify(archived));
-  if (syncedCount > 0) {
-    console.log('[同步] 从Excel恢复了 ' + syncedCount + ' 个归档项目');
+  if (syncedCount > 0 || removedCount > 0) {
+    console.log('[同步] 从Excel同步归档状态: 新增' + syncedCount + '个, 移除' + removedCount + '个');
   }
 }
 syncFromExcel();
