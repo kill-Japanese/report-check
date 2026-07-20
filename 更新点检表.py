@@ -1207,17 +1207,25 @@ let deletedIds = JSON.parse(localStorage.getItem('deletedIds') || '[]');
 let customEmails = JSON.parse(localStorage.getItem('customEmails') || '{}');
 let newProjects = JSON.parse(localStorage.getItem('newProjects') || '[]');
 
-// 【修复】同步 Excel 中已归档的项目到 archived 对象
-// 后端写入Excel的归档状态需要同步到前端，否则归档看板看不到
-if (typeof RAW_DATA !== 'undefined' && RAW_DATA.allProjects) {
+// 【修复】从 RAW_DATA 同步 Excel 中的归档标志到 archived 对象
+// 后端写入Excel的归档/删除状态需要同步到前端，否则归档看板看不到、删除项目会恢复
+function syncFromExcel() {
+  if (typeof RAW_DATA === 'undefined' || !RAW_DATA.allProjects) return;
+  let syncedCount = 0;
   RAW_DATA.allProjects.forEach(function(p) {
+    // 同步归档状态：Excel中已归档但前端archived没有的，补充进去
     if (p['已归档'] && !archived[p.id]) {
       archived[p.id] = { time: new Date().toISOString(), project: p['项目'], fromExcel: true };
+      syncedCount++;
     }
   });
   // 同步回 localStorage
   localStorage.setItem('projectArchived', JSON.stringify(archived));
+  if (syncedCount > 0) {
+    console.log('[同步] 从Excel恢复了 ' + syncedCount + ' 个归档项目');
+  }
 }
+syncFromExcel();
 
 // 将本地新增的项目合并到原始数据中（页面刷新后恢复新增项目）
 function mergeLocalNewProjects() {
