@@ -40,10 +40,5 @@
 [2026-07-21 00:28:55] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
 [2026-07-21 00:30:14] USER_CREATE | 用户: admin | 创建用户: e2e_test_1660, 角色: viewer
 [2026-07-21 00:33:15] USER_CREATE | 用户: admin | 创建用户: e2e_test_1749, 角色: viewer
-[2026-07-21 02:24:53] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 300 秒
-[2026-07-21 02:25:42] LOGIN | 用户: admin | 登录成功
-[2026-07-21 02:26:00] PASSWORD_CHANGE | 用户: admin | 修改密码成功
-[2026-07-21 02:26:09] USER_DELETE | 用户: admin | 删除用户: api_test_1470
-[2026-07-21 02:26:23] USER_DELETE | 用户: admin | 删除用户: e2e_test_1564
-[2026-07-21 02:26:27] USER_DELETE | 用户: admin | 删除用户: testuser_1243
-[2026-07-21 02:26:30] USER_DELETE | 用户: admin | 删除用户: persist_test_1273
+[2026-07-21 02:26:20] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 300 秒
+[2026-07-21 02:26:54] LOGIN | 用户: admin | 登录成功
