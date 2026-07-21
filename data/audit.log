@@ -37,3 +37,5 @@
 [2026-07-20 23:54:29] USER_CREATE | 用户: admin | 创建用户: fix_test_1344, 角色: viewer
 [2026-07-21 00:20:36] USER_CREATE | 用户: admin | 创建用户: api_test_1470, 角色: viewer
 [2026-07-21 00:28:49] USER_CREATE | 用户: admin | 创建用户: e2e_test_1564, 角色: viewer
+[2026-07-21 00:28:55] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-21 00:30:14] USER_CREATE | 用户: admin | 创建用户: e2e_test_1660, 角色: viewer
