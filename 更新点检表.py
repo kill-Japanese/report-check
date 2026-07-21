@@ -1281,6 +1281,14 @@ async function refreshRawData() {
         RAW_DATA.stats = RAW_DATA.stats || {};
         RAW_DATA.stats.total = activeProjects.length;
         console.log('[同步] 已从服务器刷新 ' + data.allProjects.length + ' 个项目');
+        
+        // 【关键修复】刷新后重新合并 localStorage 中的新增项目
+        // 防止 refreshRawData 覆盖了还未同步成功的本地新增项目
+        const merged = mergeLocalNewProjects();
+        if (merged > 0) {
+          console.log('[同步] 刷新后恢复了 ' + merged + ' 个本地新增项目');
+        }
+        
         return true;
       }
     }
@@ -1373,6 +1381,7 @@ function mergeLocalNewProjects() {
   if (addedCount > 0) {
     console.log(`已从本地存储恢复 ${addedCount} 个新增项目`);
   }
+  return addedCount;
 }
 mergeLocalNewProjects();
 
@@ -1447,13 +1456,19 @@ async function collabLoadData() {
     // 所以必须以 Excel（RAW_DATA）中的归档状态为准
     await syncFromExcel();
 
-    // 保存到本地
+    // 【关键修复】再次合并 localStorage 中的新增项目
+    // syncFromExcel 内部的 refreshRawData 会覆盖 RAW_DATA，需要确保本地项目被恢复
+    mergeLocalNewProjects();
+
+    // 保存到本地（但不覆盖 localStorage 中的 newProjects，保留未确认的）
     localStorage.setItem('projectEdits', JSON.stringify(localEdits));
     localStorage.setItem('projectNotes', JSON.stringify(notes));
     localStorage.setItem('projectChecked', JSON.stringify(checked));
     localStorage.setItem('projectArchived', JSON.stringify(archived));
     localStorage.setItem('customEmails', JSON.stringify(customEmails));
-    localStorage.setItem('newProjects', JSON.stringify(newProjects));
+    // 【关键修复】不直接用服务器的 newProjects 覆盖本地的
+    // 本地的 newProjects 可能包含还未被服务器确认的项目
+    // localStorage.setItem('newProjects', JSON.stringify(newProjects));
     localStorage.setItem('deletedIds', JSON.stringify(deletedIds));
     
     console.log('[协作] 已从服务器加载数据');
@@ -1488,15 +1503,26 @@ async function collabSyncToServer() {
       // 【关键修复】同步成功后从服务器刷新 RAW_DATA
       // 否则客户端的归档/删除状态是过时的，重置时会出错
       await refreshRawData();
-      // 同步成功后清空已提交的新增项目和删除ID
-      // 注意：archived/localEdits/notes/checked 不清空，因为它们是前端展示状态
-      // （后端已正确处理"取消归档"语义：前端没有的键意味着取消归档）
+      
+      // 【关键修复】只移除已经确认写入服务器的项目
+      // 防止因任何原因未写入成功的项目被误删
       if (newProjects.length > 0) {
-        newProjects = [];
+        const serverIds = new Set(RAW_DATA.allProjects.map(p => p.id));
+        const pendingProjects = newProjects.filter(np => !serverIds.has(np.id));
+        const confirmedCount = newProjects.length - pendingProjects.length;
+        newProjects = pendingProjects;
         localStorage.setItem('newProjects', JSON.stringify(newProjects));
+        if (confirmedCount > 0) {
+          console.log('[协作] 已确认 ' + confirmedCount + ' 个新增项目写入服务器');
+        }
+        if (pendingProjects.length > 0) {
+          console.log('[协作] ' + pendingProjects.length + ' 个项目待重试同步');
+        }
       }
       if (deletedIds.length > 0) {
-        deletedIds = [];
+        const serverIds = new Set(RAW_DATA.allProjects.map(p => p.id));
+        const stillDeleted = deletedIds.filter(id => !serverIds.has(id));
+        deletedIds = stillDeleted;
         localStorage.setItem('deletedIds', JSON.stringify(deletedIds));
       }
       console.log('[协作] 已同步到服务器');
