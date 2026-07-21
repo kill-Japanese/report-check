@@ -39,6 +39,9 @@ except ImportError:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 GITHUB_API_BASE = 'https://api.github.com'
 
+# GitHub 配置缓存（避免每次都读文件/环境变量）
+_github_config_cache = None
+
 # ==================== HTTP 请求封装（零依赖） ====================
 
 def _http_request(url: str, method: str = 'GET', headers: dict = None,
@@ -152,7 +155,9 @@ def _parse_github_url(url: str) -> tuple[str, str, str]:
 
 def _get_github_config() -> tuple[str, str, str]:
     """
-    从多种来源获取 GitHub 认证信息（按优先级）
+    从多种来源获取 GitHub 认证信息（带缓存，避免每次都重读）
+    
+    优先级：
     1. 环境变量 GITHUB_TOKEN（最高优先级）
     2. .git/config 文件中的 remote URL（即使 git 命令不可用）
     3. git remote 命令（git 命令可用时）
@@ -160,6 +165,10 @@ def _get_github_config() -> tuple[str, str, str]:
     
     返回: (token, owner, repo)
     """
+    global _github_config_cache
+    if _github_config_cache is not None:
+        return _github_config_cache
+    
     # 第1优先级：环境变量
     token = os.environ.get('GITHUB_TOKEN', '')
     owner = os.environ.get('GITHUB_OWNER', '')
@@ -224,12 +233,12 @@ def _get_github_config() -> tuple[str, str, str]:
     if not repo:
         repo = 'report-check'
     
-    # 调试信息
+    # 调试信息（只在首次调用时打印）
     if not token:
         print(f'[GitHub Config] ⚠️  未找到 GitHub Token，请设置 GITHUB_TOKEN 环境变量')
-    else:
-        print(f'[GitHub Config] Token: ***{token[-4:] if len(token) > 4 else "***"}, Owner: {owner}, Repo: {repo}')
     
+    # 缓存结果
+    _github_config_cache = (token, owner, repo)
     return token, owner, repo
 
 
@@ -358,43 +367,42 @@ def github_api_pull() -> tuple[bool, str]:
 def github_api_push(message: str = '同步数据') -> tuple[bool, str]:
     """
     将所有关键文件的变更推送到 GitHub（替代 git push）
+    
+    【极速优化】
+    1. 并行推送文件（ThreadPoolExecutor）而不是串行
+    2. 先比较 SHA 跳过未变更的文件，避免不必要的网络请求
+    3. 预期：从 10-20 秒降到 3-6 秒
+    
     返回: (成功, 消息)
     """
-    pushed = []
-    errors = []
+    import hashlib
+    import concurrent.futures
+    
+    # 收集所有需要推送的文件
+    files_to_push = []  # (path_in_repo, local_filepath, content_bytes)
     
     for filename in CRITICAL_FILES:
         filepath = os.path.join(BASE_DIR, filename)
-        if not os.path.exists(filepath):
-            continue
-        
-        try:
-            with open(filepath, 'rb') as f:
-                content = f.read()
-        except Exception as e:
-            errors.append(f'{filename}读取失败: {e}')
-            continue
-        
-        ok, msg = github_api_push_file(filename, content, message)
-        if ok:
-            pushed.append(filename)
-        else:
-            errors.append(f'{filename}: {msg}')
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'rb') as f:
+                    content = f.read()
+                files_to_push.append((filename, filepath, content))
+            except Exception as e:
+                pass
     
-    # 同时推送 HTML 报表
+    # HTML 报表
     html_file = '项目延期点检表.html'
     html_path = os.path.join(BASE_DIR, html_file)
     if os.path.exists(html_path):
         try:
             with open(html_path, 'rb') as f:
                 content = f.read()
-            ok, msg = github_api_push_file(html_file, content, message)
-            if ok:
-                pushed.append(html_file)
+            files_to_push.append((html_file, html_path, content))
         except:
             pass
     
-    # 推送 data 目录中的 JSON 文件
+    # data 目录中的文件
     data_dir = os.path.join(BASE_DIR, 'data')
     if os.path.exists(data_dir):
         for fname in os.listdir(data_dir):
@@ -403,18 +411,75 @@ def github_api_push(message: str = '同步数据') -> tuple[bool, str]:
                 try:
                     with open(fpath, 'rb') as f:
                         content = f.read()
-                    ok, _ = github_api_push_file(f'data/{fname}', content, message)
-                    if ok:
-                        pushed.append(f'data/{fname}')
+                    files_to_push.append((f'data/{fname}', fpath, content))
                 except:
                     pass
     
+    if not files_to_push:
+        return True, '无变更需要推送'
+    
+    # 获取配置（只用一次）
+    token, owner, repo = _get_github_config()
+    if not token:
+        return False, '缺少 GitHub Token'
+    
+    # 【并行】检查文件是否有变更（先获取所有 SHA，再比较）
+    def _check_and_push(item):
+        """检查并推送单个文件：有变更才推送"""
+        path_in_repo, local_path, content = item
+        try:
+            # 先获取远程 SHA
+            ok, _, remote_sha = github_api_get_file(path_in_repo)
+            if ok and remote_sha:
+                # 比较内容（远程 SHA = git SHA，需要用 git blob 方式计算）
+                local_git_sha = _git_sha1(content)
+                if local_git_sha == remote_sha:
+                    return (True, path_in_repo, '未变更，跳过')
+            
+            # 有变更，推送
+            ok, msg = github_api_push_file(path_in_repo, content, message, sha=remote_sha if ok else '')
+            return (ok, path_in_repo, msg if not ok else '已推送')
+        except Exception as e:
+            return (False, path_in_repo, str(e))
+    
+    pushed = []
+    errors = []
+    skipped = 0
+    
+    # 并行执行
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(_check_and_push, item) for item in files_to_push]
+        for future in concurrent.futures.as_completed(futures, timeout=60):
+            try:
+                ok, filename, msg = future.result()
+                if ok:
+                    if '跳过' in msg:
+                        skipped += 1
+                    else:
+                        pushed.append(filename)
+                else:
+                    errors.append(f'{filename}: {msg}')
+            except:
+                pass
+    
     if pushed:
-        return True, f'已推送 {len(pushed)} 个文件到 GitHub'
+        msg = f'已推送 {len(pushed)} 个文件到 GitHub'
+        if skipped:
+            msg += f'（{skipped} 个未变更已跳过）'
+        return True, msg
+    elif skipped > 0:
+        return True, f'无变更（{skipped} 个文件已跳过）'
     elif errors:
         return False, f'推送失败: {"; ".join(errors[:3])}'
     else:
         return True, '无变更需要推送'
+
+
+def _git_sha1(content: bytes) -> str:
+    """计算 Git blob SHA1（与 GitHub 返回的 SHA 一致）"""
+    import hashlib
+    header = f'blob {len(content)}\x00'.encode('utf-8')
+    return hashlib.sha1(header + content).hexdigest()
 
 
 # ==================== 统一接口（自动切换模式） ====================

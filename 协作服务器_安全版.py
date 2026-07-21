@@ -46,22 +46,46 @@ SECURITY_HEADERS = {
 }
 
 # ==================== 数据管理 ====================
+def _compute_last_update() -> str:
+    """计算数据的最后更新时间（用Excel文件的修改时间，避免不必要的刷新）
+    
+    【死循环修复】之前用 datetime.now()，每次调用都不一样 → 前端每5秒检测到"更新"→ 死循环
+    现在用 Excel 文件的 mtime，只有数据真正变化时才改变
+    """
+    try:
+        excel_path = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
+        user_path = os.path.join(BASE_DIR, '用户管理.xlsx')
+        times = []
+        for p in [excel_path, user_path, DATA_FILE]:
+            if os.path.exists(p):
+                times.append(os.path.getmtime(p))
+        if times:
+            return str(int(max(times) * 1000))  # 毫秒时间戳，稳定可比较
+    except:
+        pass
+    return '0'
+
+
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                # 【死循环修复】用 Excel mtime 覆盖 lastUpdate
+                data['lastUpdate'] = _compute_last_update()
+                return data
         except:
             pass
     return {
         'localEdits': {}, 'notes': {}, 'checked': {},
         'archived': {}, 'customEmails': {}, 'newProjects': [],
         'deletedIds': [],
-        'lastUpdate': datetime.now().isoformat()
+        'lastUpdate': _compute_last_update()
     }
 
+
 def save_data(data):
-    data['lastUpdate'] = datetime.now().isoformat()
+    data['lastUpdate'] = _compute_last_update()
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -918,7 +942,12 @@ class SecureCollaborationHandler(http.server.SimpleHTTPRequestHandler):
         return auth.get_user(session['username'])
 
     def set_session_cookie(self, session_id: str):
-        """设置 Session Cookie（兼容 Chrome/Safari/Edge/Render HTTPS）"""
+        """设置 Session Cookie（兼容 Chrome/Safari/Edge/Render HTTPS）
+        
+        【关键修复】不设置 Max-Age，让浏览器把它作为会话Cookie（关闭浏览器才清除）。
+        Session 有效性完全由服务端的 expires_at 控制（20分钟无操作过期）。
+        之前设置 Max-Age=20分钟会导致：即使有操作，20分钟后浏览器也删除Cookie。
+        """
         # 检测是否 HTTPS（通过代理头、Render 环境变量、端口）
         is_https = False
         if self.headers.get('X-Forwarded-Proto', '').lower() == 'https':
@@ -933,12 +962,12 @@ class SecureCollaborationHandler(http.server.SimpleHTTPRequestHandler):
         # Chrome 80+ 要求：Secure 的 Cookie 必须 SameSite=None 或 Lax
         # 但 SameSite=None 必须配合 Secure，所以 HTTPS 下用 None，HTTP 下用 Lax
         samesite_flag = 'None' if is_https else 'Lax'
+        # 【关键修复】不设 Max-Age，服务端通过 expires_at 控制
         cookie = (
             f'session_id={session_id}; '
             f'Path=/; '
             f'HttpOnly; '
-            f'SameSite={samesite_flag}; '
-            f'Max-Age={auth.SESSION_TIMEOUT}'
+            f'SameSite={samesite_flag}'
             f'{secure_flag}'
         )
         self.send_header('Set-Cookie', cookie)
@@ -1126,7 +1155,12 @@ window.CURRENT_USER = {user_info};
             if not self.require_permission('view'):
                 return
             projects = sync_excel.read_excel_projects()
-            self.send_json({'allProjects': projects})
+            # 【死循环修复】必须返回 lastUpdate，否则客户端无法正确同步版本
+            data_info = load_data()
+            self.send_json({
+                'allProjects': projects,
+                'lastUpdate': data_info.get('lastUpdate', '')
+            })
             return
 
         # --- API: 用户列表（需 user_manage 权限）---
@@ -1387,15 +1421,15 @@ window.CURRENT_USER = {user_info};
         # 不再通过协作数据 JSON 中转，避免多源状态不同步的问题
 
         # --- 新增项目（需 edit 权限）---
+        # 【关键优化】操作后不返回全量项目数据，避免大JSON序列化导致502超时
+        # 前端收到成功响应后自行刷新页面或调用 /api/projects 获取最新数据
         if path == '/api/action/add':
             if not self.require_permission('edit'):
                 return
             user = self.get_current_user()
             ok, msg = sync_excel.action_add_project(data, user['username'])
             auth._audit_log('PROJECT_ADD', user['username'], msg[:100])
-            # 操作完成后返回最新项目数据
-            projects = sync_excel.read_excel_projects()
-            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            self.send_json({'success': ok, 'message': msg})
             return
 
         # --- 删除项目（需 edit 权限）---
@@ -1406,8 +1440,7 @@ window.CURRENT_USER = {user_info};
             pid = int(data.get('id', 0))
             ok, msg = sync_excel.action_delete_project(pid, user['username'])
             auth._audit_log('PROJECT_DELETE', user['username'], f'ID={pid}: {msg[:80]}')
-            projects = sync_excel.read_excel_projects()
-            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            self.send_json({'success': ok, 'message': msg})
             return
 
         # --- 归档项目（需 edit 权限）---
@@ -1418,8 +1451,7 @@ window.CURRENT_USER = {user_info};
             pid = int(data.get('id', 0))
             ok, msg = sync_excel.action_archive_project(pid, user['username'])
             auth._audit_log('PROJECT_ARCHIVE', user['username'], f'ID={pid}: {msg[:80]}')
-            projects = sync_excel.read_excel_projects()
-            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            self.send_json({'success': ok, 'message': msg})
             return
 
         # --- 取消归档（需 edit 权限）---
@@ -1430,8 +1462,7 @@ window.CURRENT_USER = {user_info};
             pid = int(data.get('id', 0))
             ok, msg = sync_excel.action_unarchive_project(pid, user['username'])
             auth._audit_log('PROJECT_UNARCHIVE', user['username'], f'ID={pid}: {msg[:80]}')
-            projects = sync_excel.read_excel_projects()
-            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            self.send_json({'success': ok, 'message': msg})
             return
 
         # --- 编辑项目（需 edit 权限）---
@@ -1443,8 +1474,7 @@ window.CURRENT_USER = {user_info};
             edit_data = data.get('fields', {})
             ok, msg = sync_excel.action_edit_project(pid, edit_data, user['username'])
             auth._audit_log('PROJECT_EDIT', user['username'], f'ID={pid}: {msg[:80]}')
-            projects = sync_excel.read_excel_projects()
-            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            self.send_json({'success': ok, 'message': msg})
             return
 
         # --- 数据同步（需 edit 权限）---
@@ -1662,7 +1692,8 @@ def _auto_pull_worker(interval_seconds: int):
                     current_mtime = os.path.getmtime(excel_path)
                     if _last_pull_hash is None or current_mtime != _last_pull_hash:
                         _last_pull_hash = current_mtime
-                        # Excel有变化，重新生成报表
+                        # Excel有变化，清除缓存 + 重新生成报表
+                        sync_excel.invalidate_projects_cache()
                         ok2, msg2 = sync_excel.regenerate_report()
                         print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🔄 GitHub数据已更新: {msg2}")
         except Exception as e:
@@ -1703,12 +1734,24 @@ def main():
     # ========== 【关键修复2】再初始化认证系统 ==========
     # 此时 用户管理.xlsx 已经从 GitHub 拉取回来，不会被 init_default_users 覆盖
     auth.init_auth()
-
-    # 启动自动同步到 GitHub（每5分钟）
-    auth.auto_sync_periodically(300)
     
-    # 启动自动从 GitHub 拉取（每5分钟）
-    start_auto_pull(300)
+    # ========== 【502关键修复】启动时预热项目数据缓存 ==========
+    # 第一个用户请求时就不用冷启动读Excel了（从几秒降到几毫秒）
+    print("📊 正在预热项目数据缓存...")
+    try:
+        warmup_projects = sync_excel.read_excel_projects()
+        print(f"   ✅ 缓存预热完成（{len(warmup_projects)}条数据）")
+    except Exception as e:
+        print(f"   ⚠️  缓存预热失败: {e}")
+
+    # 启动自动同步用户数据到 GitHub（每30分钟一次，用户数据变化不频繁）
+    auth.auto_sync_periodically(30 * 60)
+    
+    # 【关键】关闭自动从 GitHub 拉取！
+    # 服务器是唯一数据源，用户只通过网页操作修改数据
+    # 没有其他客户端会修改 Excel，所以完全不需要频繁拉取
+    # 只在启动时拉一次恢复数据即可（启动代码中已有 git_pull）
+    # start_auto_pull(300)  ← 已禁用
 
     if not os.path.exists(DATA_FILE):
         save_data(load_data())

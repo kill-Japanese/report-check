@@ -5,6 +5,26 @@ services:
     region: singapore
     buildCommand: apt-get update && apt-get install -y git && pip install -r requirements.txt
     startCommand: python 协作服务器_安全版.py 10000
+    # 【关键】关闭自动部署，只有手动点击"Deploy"才会部署
+    # 彻底解决每次修改Excel都触发重新部署的问题
+    # （代码需要更新时，在 Render Dashboard 点击 Manual Deploy 即可）
+    autoDeployTrigger: 'off'
+    # 【备选】如果想保留自动部署但只触发代码变更，取消下面的注释
+    # buildFilter:
+    #   paths:
+    #     - "*.py"
+    #     - "requirements.txt"
+    #     - "render.yaml"
+    #     - "Dockerfile"
+    #     - "Procfile"
+    #     - "*.sh"
+    #   ignoredPaths:
+    #     - "*.xlsx"
+    #     - "*.html"
+    #     - "data/**"
+    #     - "*.json"
+    #     - "*.log"
+    #     - "*.md"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0

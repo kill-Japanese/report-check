@@ -12,6 +12,7 @@ import os
 import sys
 import json
 import subprocess
+import threading
 from datetime import datetime
 import pandas as pd
 from openpyxl import load_workbook
@@ -28,6 +29,22 @@ HTML_FILE = os.path.join(BASE_DIR, '项目延期点检表.html')
 # 注意：openpyxl写入时使用 1-based 列号，所以 COL_ARCHIVED+1 = 第2列(B列)
 COL_ARCHIVED = 0   # 第1列(A列)用于存放归档标志（原U列/20，改为A列/0，避免覆盖公式）
 COL_DELETED = 1    # 第2列(B列)用于存放删除标志（原V列/21，改为B列/1，软删除避免合并单元格破坏）
+
+# ==================== 项目数据缓存（解决502超时关键）====================
+# 【关键修复】每次请求都用pandas读Excel很慢（3-10秒），加缓存避免重复读取
+# 缓存失效条件：Excel文件修改时间变化 或 显式调用 invalidate_projects_cache()
+_projects_cache = None
+_projects_cache_mtime = None
+_cache_lock = threading.Lock()
+
+
+def invalidate_projects_cache():
+    """清除项目数据缓存（写入Excel后必须调用）"""
+    global _projects_cache, _projects_cache_mtime
+    with _cache_lock:
+        _projects_cache = None
+        _projects_cache_mtime = None
+        print('[缓存] 已清除项目数据缓存')
 
 # ==================== Git 仓库保障 ====================
 
@@ -201,10 +218,16 @@ def git_pull() -> tuple[bool, str]:
                 if checkout.returncode == 0 and os.path.exists(fpath):
                     restored.append(f'{f}(新建)')
 
+        # 【关键修复】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
+        archive_flags = _backup_archive_deleted_flags()
+        
         pull = subprocess.run(
             ['git', 'pull', 'origin', 'main'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
+        
+        # 【关键修复】git pull 后恢复归档/删除标志
+        _restore_archive_deleted_flags(archive_flags)
 
         msg_parts = ['拉取成功']
         if restored:
@@ -215,21 +238,91 @@ def git_pull() -> tuple[bool, str]:
     except Exception as e:
         return False, f'拉取失败: {str(e)}'
 
-def git_push(message: str = '同步数据') -> tuple[bool, str]:
-    """将变更提交并推送到 GitHub（双路径：git命令优先，GitHub API兜底）
+def _backup_archive_deleted_flags() -> dict:
+    """备份 Excel 中的归档/删除标志（防止 git pull 覆盖）
     
-    【关键修复】Render 环境中 git 命令可能不存在，
-    自动检测并回退到 GitHub REST API 模式。
+    返回: {row_num: {'archived': bool, 'deleted': bool}}
     """
-    # 检查 git 命令是否可用
-    git_available = False
+    from openpyxl import load_workbook
+    flags = {}
     try:
-        result = subprocess.run(['git', '--version'], capture_output=True, timeout=5)
-        git_available = (result.returncode == 0) and os.path.exists(os.path.join(BASE_DIR, '.git'))
-    except (FileNotFoundError, OSError):
-        git_available = False
+        if not os.path.exists(EXCEL_FILE):
+            return flags
+        wb = load_workbook(EXCEL_FILE, data_only=True)
+        ws = wb['任务计划表']
+        for row_num in range(4, ws.max_row + 1):
+            archived_val = ws.cell(row=row_num, column=COL_ARCHIVED + 1).value
+            deleted_val = ws.cell(row=row_num, column=COL_DELETED + 1).value
+            archived = str(archived_val).strip() in ('已归档', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y') if archived_val else False
+            deleted = str(deleted_val).strip() in ('已删除', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y') if deleted_val else False
+            if archived or deleted:
+                flags[row_num] = {'archived': archived, 'deleted': deleted}
+        wb.close()
+        print(f'[sync] 已备份 {len(flags)} 个行的归档/删除标志')
+    except Exception as e:
+        print(f'[sync] 备份归档标志失败: {e}')
+    return flags
+
+
+def _restore_archive_deleted_flags(flags: dict):
+    """恢复归档/删除标志到 Excel（git pull 后调用）"""
+    if not flags:
+        return
+    from openpyxl import load_workbook
+    try:
+        if not os.path.exists(EXCEL_FILE):
+            return
+        wb = load_workbook(EXCEL_FILE)
+        ws = wb['任务计划表']
+        restored = 0
+        for row_num, state in flags.items():
+            if row_num > ws.max_row:
+                continue
+            if state['archived']:
+                current = ws.cell(row=row_num, column=COL_ARCHIVED + 1).value
+                if not current or str(current).strip() not in ('已归档', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y'):
+                    ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='已归档')
+                    restored += 1
+            if state['deleted']:
+                current = ws.cell(row=row_num, column=COL_DELETED + 1).value
+                if not current or str(current).strip() not in ('已删除', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y'):
+                    ws.cell(row=row_num, column=COL_DELETED + 1, value='已删除')
+                    restored += 1
+        if restored > 0:
+            wb.save(EXCEL_FILE)
+            invalidate_projects_cache()
+            print(f'[sync] 已恢复 {restored} 个行的归档/删除标志')
+        wb.close()
+    except Exception as e:
+        print(f'[sync] 恢复归档标志失败: {e}')
+
+
+# Git 可用性缓存（避免每次都检查 git --version）
+_git_available_cache = None
+
+
+def git_push(message: str = '同步数据') -> tuple[bool, str]:
+    """将变更提交并推送到 GitHub（极速优化版）
     
-    if not git_available:
+    【极速优化】99% 的场景下跳过不必要的网络请求：
+    1. 不做 git fetch（省 3-5 秒网络请求）
+    2. 不检查 ahead/behind（省 2 次 subprocess）
+    3. 直接 git add + commit + push
+    4. 只有 push 失败时才回退到完整流程（fetch+pull+重试）
+    
+    预期：从 10-15 秒降到 2-4 秒
+    """
+    global _git_available_cache
+    
+    # 检查 git 命令是否可用（带缓存）
+    if _git_available_cache is None:
+        try:
+            result = subprocess.run(['git', '--version'], capture_output=True, timeout=5)
+            _git_available_cache = (result.returncode == 0) and os.path.exists(os.path.join(BASE_DIR, '.git'))
+        except (FileNotFoundError, OSError):
+            _git_available_cache = False
+    
+    if not _git_available_cache:
         # 回退到 GitHub API 模式
         try:
             from github_sync import github_api_push
@@ -238,78 +331,26 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
         except Exception as api_e:
             return False, f'git不可用且API推送失败: {api_e}'
     
-    # git 可用，使用原有逻辑
+    # ============== 极速路径：直接 add + commit + push ==============
     try:
-        ensure_ok, ensure_msg = ensure_git_repo()
-        if not ensure_ok:
-            return False, f'Git仓库不可用: {ensure_msg}'
-        if not os.path.exists(os.path.join(BASE_DIR, '.git')):
-            return False, '未检测到 Git 仓库'
-
-        # 【关键修复】先 fetch 最新状态，检查是否落后于远程
-        # （当之前用 GitHub API 推送过时，本地会落后）
-        fetch = subprocess.run(
-            ['git', 'fetch', 'origin', 'main'],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
-        )
-        
-        behind = subprocess.run(
-            ['git', 'rev-list', '--count', 'HEAD..origin/main'],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
-        )
-        try:
-            behind_count = int(behind.stdout.strip())
-        except ValueError:
-            behind_count = 0
-        
-        if behind_count > 0:
-            print(f'[sync] 本地落后远程 {behind_count} 个提交，尝试先拉取...')
-            # 尝试拉取（自动合并）
-            pull = subprocess.run(
-                ['git', 'pull', 'origin', 'main', '--no-edit'],
-                capture_output=True, text=True, cwd=BASE_DIR, timeout=30
-            )
-            if pull.returncode != 0:
-                # 拉取失败（可能有冲突），回退到 GitHub API 模式
-                print(f'[sync] 拉取失败，回退到 GitHub API 模式: {pull.stderr[:100]}')
-                try:
-                    from github_sync import github_api_push
-                    return github_api_push(message)
-                except Exception as api_e:
-                    return False, f'本地落后远程且拉取失败: {pull.stderr[:200]}'
-
-        ahead = subprocess.run(
-            ['git', 'rev-list', '--count', 'origin/main..HEAD'],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
-        )
-        try:
-            ahead_count = int(ahead.stdout.strip())
-        except ValueError:
-            ahead_count = 0
-
-        if ahead_count > 0:
-            push = subprocess.run(
-                ['git', 'push', 'origin', 'main'],
-                capture_output=True, text=True, cwd=BASE_DIR, timeout=30
-            )
-            if push.returncode != 0:
-                # 【关键修复】git push 失败时，回退到 GitHub API 模式推送
-                try:
-                    from github_sync import github_api_push
-                    print('[sync] git push 失败，回退到 GitHub API 模式')
-                    return github_api_push(message)
-                except Exception as api_e:
-                    return False, f'推送失败（git+API均失败）: {push.stderr[:200]}'
-            return True, f'已推送 {ahead_count} 个待提交到 GitHub'
-
+        # 1. 检查是否有变更（只检查关键文件）
         result = subprocess.run(
-            ['git', 'status', '--porcelain'],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+            ['git', 'status', '--porcelain',
+             '超声波户表脚本.xlsx', '用户管理.xlsx',
+             '项目延期点检表.html', 'data/'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=5
         )
         if not result.stdout.strip():
             return True, '无变更，无需推送'
-
-        subprocess.run(['git', 'add', '-A'], capture_output=True, cwd=BASE_DIR, timeout=10)
+        
+        # 2. 只 add 关键文件（不用 -A，更快）
+        subprocess.run(
+            ['git', 'add', '超声波户表脚本.xlsx', '用户管理.xlsx',
+             '项目延期点检表.html', 'data/'],
+            capture_output=True, cwd=BASE_DIR, timeout=5
+        )
+        
+        # 3. commit
         commit_msg = f'[数据同步] {message} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
         commit_result = subprocess.run(
             ['git', 'commit', '-m', commit_msg],
@@ -319,24 +360,72 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
             if 'nothing to commit' in (commit_result.stdout + commit_result.stderr):
                 return True, '无变更'
             return False, f'提交失败: {commit_result.stderr[:200]}'
-
+        
+        # 4. push（极速路径，不做 fetch）
         push_result = subprocess.run(
+            ['git', 'push', 'origin', 'main'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=15
+        )
+        if push_result.returncode == 0:
+            return True, '已同步到 GitHub（极速路径）'
+        
+        # ============== push 失败：回退到完整流程（fetch+pull+重试）==============
+        print(f'[sync] 极速push失败（{push_result.stderr[:80]}），回退到完整流程...')
+        
+        # 撤销刚才的 commit（避免重复提交）
+        subprocess.run(['git', 'reset', '--soft', 'HEAD~1'], capture_output=True, cwd=BASE_DIR, timeout=5)
+        
+        # fetch
+        fetch = subprocess.run(
+            ['git', 'fetch', 'origin', 'main'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+        )
+        
+        # pull
+        pull = subprocess.run(
+            ['git', 'pull', 'origin', 'main', '--no-edit'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+        )
+        if pull.returncode != 0:
+            # 有冲突，回退到 GitHub API
+            print(f'[sync] pull失败，回退到GitHub API: {pull.stderr[:80]}')
+            try:
+                from github_sync import github_api_push
+                return github_api_push(message)
+            except Exception as api_e:
+                return False, f'同步失败: {pull.stderr[:200]}'
+        
+        # 重新 commit + push
+        subprocess.run(
+            ['git', 'add', '超声波户表脚本.xlsx', '用户管理.xlsx',
+             '项目延期点检表.html', 'data/'],
+            capture_output=True, cwd=BASE_DIR, timeout=5
+        )
+        commit_result2 = subprocess.run(
+            ['git', 'commit', '-m', commit_msg],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        if commit_result2.returncode != 0:
+            if 'nothing to commit' in (commit_result2.stdout + commit_result2.stderr):
+                return True, '无变更（同步完成）'
+            return False, f'提交失败: {commit_result2.stderr[:200]}'
+        
+        push_result2 = subprocess.run(
             ['git', 'push', 'origin', 'main'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
-        if push_result.returncode != 0:
-            subprocess.run(
-                ['git', 'reset', '--soft', 'HEAD~1'],
-                capture_output=True, cwd=BASE_DIR, timeout=10
-            )
-            # 【关键修复】git push 失败时，回退到 GitHub API 模式推送
-            try:
-                from github_sync import github_api_push
-                print('[sync] git push 失败，回退到 GitHub API 模式')
-                return github_api_push(message)
-            except Exception as api_e:
-                return False, f'推送失败（git+API均失败）: {push_result.stderr[:200]}'
-        return True, '已同步到 GitHub'
+        if push_result2.returncode == 0:
+            return True, '已同步到 GitHub'
+        
+        # git push 还是失败，回退到 GitHub API
+        subprocess.run(['git', 'reset', '--soft', 'HEAD~1'], capture_output=True, cwd=BASE_DIR, timeout=5)
+        try:
+            from github_sync import github_api_push
+            print('[sync] git push 失败，回退到 GitHub API 模式')
+            return github_api_push(message)
+        except Exception as api_e:
+            return False, f'推送失败（git+API均失败）: {push_result2.stderr[:200]}'
+        
     except subprocess.TimeoutExpired:
         return False, '同步超时'
     except Exception as e:
@@ -386,12 +475,62 @@ def _fmt_date(d, is_start=True):
         return d.strftime('%Y-%m-%d')
     return str(d)
 
+def _cell_val(v):
+    """安全获取单元格值，处理None/NaN"""
+    if v is None:
+        return None
+    try:
+        if pd.isna(v):
+            return None
+    except:
+        pass
+    return v
+
+
+def _not_empty(v) -> bool:
+    """判断单元格值是否非空"""
+    if v is None:
+        return False
+    try:
+        if pd.isna(v):
+            return False
+    except:
+        pass
+    s = str(v).strip()
+    return s != '' and s != 'nan'
+
+
 def read_excel_projects() -> list:
-    """从原始 Excel 读取所有项目资源（与更新点检表.py 逻辑一致）"""
+    """从原始 Excel 读取所有项目资源（与更新点检表.py 逻辑一致）
+    
+    【502关键修复1】用 openpyxl 替代 pandas 读取：
+      - pandas 导入需 2-5 秒，读 Excel 需 3-10 秒
+      - openpyxl 导入几乎瞬间，读 Excel 只需 0.5-2 秒
+    
+    【502关键修复2】添加文件级缓存：Excel文件修改时间不变则直接返回缓存，
+      避免每次请求都重读 Excel（0.5-2秒 → 几毫秒）
+    """
+    global _projects_cache, _projects_cache_mtime
+    
     if not os.path.exists(EXCEL_FILE):
         return []
     
-    df = pd.read_excel(EXCEL_FILE, sheet_name='任务计划表', header=None)
+    # 检查缓存是否有效
+    try:
+        current_mtime = os.path.getmtime(EXCEL_FILE)
+        with _cache_lock:
+            if (_projects_cache is not None and 
+                _projects_cache_mtime is not None and 
+                _projects_cache_mtime == current_mtime):
+                return _projects_cache
+    except:
+        pass
+    
+    # ============== 缓存失效，用 openpyxl 重新读取 ==============
+    from openpyxl import load_workbook as _load_wb
+    wb = _load_wb(EXCEL_FILE, data_only=True, read_only=True)
+    ws = wb['任务计划表']
+    
     projects = []
     current_dept = None
     current_project = None
@@ -399,31 +538,41 @@ def read_excel_projects() -> list:
     current_end = None
     current_desc = None
     
-    for idx in range(3, len(df)):
-        row = df.iloc[idx]
+    # 从第4行开始（Excel 1-based，前3行是表头）
+    # idx 保持与 pandas 版本一致：df从0开始，第4行对应idx=3
+    for row_idx, row in enumerate(ws.iter_rows(min_row=4, values_only=True), start=3):
+        # row 是 tuple，索引 0=A列, 1=B列, ... 4=E列, 5=F列, ...
+        # 注意：openpyxl 的 row 可能比列数短，需要用安全访问
         
-        if pd.notna(row[4]):
-            val = row[4]
+        def _get(col):
+            """安全获取列值，避免索引越界"""
+            if col < len(row):
+                return row[col]
+            return None
+        
+        # E列(4)：部门
+        if _not_empty(_get(4)):
+            val = _get(4)
             current_dept = str(val) if not isinstance(val, float) else val
         
-        if pd.notna(row[5]):
-            current_project = str(row[5])
-            current_start = row[6] if pd.notna(row[6]) else None
-            current_end = row[7] if pd.notna(row[7]) else None
-            current_desc = str(row[8]) if pd.notna(row[8]) else ''
+        # F列(5)：项目名
+        if _not_empty(_get(5)):
+            current_project = str(_get(5))
+            current_start = _cell_val(_get(6))   # G列：项目开始
+            current_end = _cell_val(_get(7))     # H列：项目结束
+            current_desc = str(_get(8)) if _not_empty(_get(8)) else ''  # I列：项目描述
         else:
-            # 即使项目名（F列）没值（合并单元格的后续行），
-            # 也要检查项目描述（I列）是否有独立值（合并被取消后可能有编辑值）
-            if pd.notna(row[8]):
-                current_desc = str(row[8])
-            # 同样检查开始/结束时间
-            if pd.notna(row[6]):
-                current_start = row[6]
-            if pd.notna(row[7]):
-                current_end = row[7]
+            # 合并单元格的后续行，检查是否有独立值
+            if _not_empty(_get(8)):
+                current_desc = str(_get(8))
+            if _not_empty(_get(6)):
+                current_start = _cell_val(_get(6))
+            if _not_empty(_get(7)):
+                current_end = _cell_val(_get(7))
         
-        resource_type = str(row[9]) if pd.notna(row[9]) else ''
-        resource_name = str(row[10]) if pd.notna(row[10]) else ''
+        # J列(9)：资源类型，K列(10)：资源名称
+        resource_type = str(_get(9)) if _not_empty(_get(9)) else ''
+        resource_name = str(_get(10)) if _not_empty(_get(10)) else ''
         
         # 清理资源名称
         if resource_name:
@@ -438,36 +587,47 @@ def read_excel_projects() -> list:
         
         has_resource = resource_type.strip() or resource_name.strip()
         
-        # 读取归档标志（第21列，U列）
+        # A列(0)：归档标志
         archived_flag = ''
-        if COL_ARCHIVED < len(row) and pd.notna(row[COL_ARCHIVED]):
-            archived_flag = str(row[COL_ARCHIVED]).strip()
+        if _not_empty(_get(COL_ARCHIVED)):
+            archived_flag = str(_get(COL_ARCHIVED)).strip()
         is_archived = archived_flag in ('已归档', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y')
         
-        # 读取删除标志（第22列，V列）- 软删除，已删除的项目不返回
+        # B列(1)：删除标志（软删除）
         deleted_flag = ''
-        if COL_DELETED < len(row) and pd.notna(row[COL_DELETED]):
-            deleted_flag = str(row[COL_DELETED]).strip()
+        if _not_empty(_get(COL_DELETED)):
+            deleted_flag = str(_get(COL_DELETED)).strip()
         is_deleted = deleted_flag in ('已删除', '1', 'true', 'True', 'YES', 'yes', 'Y', 'y')
         
         if is_deleted:
-            continue  # 跳过已删除的项目
+            continue
         
         if current_project and has_resource:
             projects.append({
-                'id': idx,
-                '部门': current_dept if current_dept and not (isinstance(current_dept, float) and pd.isna(current_dept)) else '',
+                'id': row_idx,
+                '部门': current_dept if current_dept and not (isinstance(current_dept, float) and (pd.isna(current_dept) if hasattr(pd, 'isna') else False)) else '',
                 '项目': current_project,
                 '项目开始时间': _fmt_date(current_start, True),
                 '项目结束时间': _fmt_date(current_end, False),
                 '项目描述': current_desc,
                 '资源类型': resource_type,
                 '资源名称': resource_name,
-                '资源开始时间': _fmt_date(row[11] if pd.notna(row[11]) else None, True),
-                '资源结束时间': _fmt_date(row[12] if pd.notna(row[12]) else None, False),
-                '日平均工时': row[13] if pd.notna(row[13]) else 0,
+                '资源开始时间': _fmt_date(_cell_val(_get(11)), True),
+                '资源结束时间': _fmt_date(_cell_val(_get(12)), False),
+                '日平均工时': _get(13) if _not_empty(_get(13)) else 0,
                 '已归档': is_archived,
             })
+    
+    wb.close()
+    
+    # 写入缓存
+    try:
+        with _cache_lock:
+            _projects_cache = projects
+            _projects_cache_mtime = os.path.getmtime(EXCEL_FILE)
+            print(f'[缓存] 项目数据已缓存（{len(projects)}条，openpyxl）')
+    except:
+        pass
     
     return projects
 
@@ -746,6 +906,7 @@ def apply_collab_to_excel() -> tuple[bool, str, int]:
                 print(f"   ➕ 新增: {np.get('项目', '')} / {np.get('资源名称', '')}")
         
         wb.save(EXCEL_FILE)
+        invalidate_projects_cache()
         
     except Exception as e:
         return False, f'写入 Excel 失败: {str(e)}', changes
@@ -949,32 +1110,60 @@ def action_add_project(project_data: dict, operator: str = 'unknown') -> tuple[b
             ws.cell(row=last_row, column=COL_ARCHIVED + 1, value='已归档')
         
         wb.save(EXCEL_FILE)
+        invalidate_projects_cache()
         
-        # 【关键】Excel 已写入成功！后续操作（报表+推送）不阻塞
+        # 【关键】Excel 已写入成功！报表+推送放到后台线程，不阻塞HTTP响应
         messages = [f'新增成功(ID={new_id})']
-        
-        # 生成报表（失败不影响结果）
-        try:
-            r_ok, r_msg = regenerate_report()
-            messages.append(r_msg)
-        except Exception as re:
-            messages.append(f'报表生成失败: {str(re)[:50]}')
-            print(f'[action_add] 报表生成异常: {re}')
-        
-        # 推送 GitHub（失败不影响结果，下次会重试）
-        try:
-            p_ok, p_msg = git_push(f'{operator}新增项目: {project_data.get("项目", "")}')
-            messages.append(p_msg)
-        except Exception as pe:
-            messages.append(f'Git推送失败: {str(pe)[:50]}')
-            print(f'[action_add] Git推送异常: {pe}')
+        commit_msg = f'{operator}新增项目: {project_data.get("项目", "")}'
+        thread = threading.Thread(target=_background_report_and_push, args=(commit_msg,), daemon=True)
+        thread.start()
+        messages.append('（报表和同步正在后台执行）')
         
         return True, '; '.join(messages)
     except Exception as e:
         return False, f'新增失败: {str(e)}'
 
+def _background_report_and_push(commit_msg: str):
+    """【后台线程】生成报表 + 推送 GitHub（并行执行，总耗时 = max(报表, push) 而非 sum）
+    
+    优化前（串行）：耗时 = 报表(3-8s) + push(2-4s) = 5-12s
+    优化后（并行）：耗时 = max(报表(3-8s), push(2-4s)) = 3-8s
+    """
+    import concurrent.futures
+    
+    def _do_report():
+        try:
+            ok, msg = regenerate_report()
+            print(f'[后台] 报表生成: {msg}')
+            return ok
+        except Exception as e:
+            print(f'[后台] 报表生成异常: {e}')
+            return False
+    
+    def _do_push():
+        try:
+            ok, msg = git_push(commit_msg)
+            print(f'[后台] Git推送: {msg}')
+            return ok
+        except Exception as e:
+            print(f'[后台] Git推送异常: {e}')
+            return False
+    
+    # 并行执行报表生成和 Git 推送
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f1 = executor.submit(_do_report)
+        f2 = executor.submit(_do_push)
+        # 等待两个都完成（或超时）
+        try:
+            concurrent.futures.wait([f1, f2], timeout=60)
+        except:
+            pass
+
+
 def _finish_action(excel_written: bool, action_name: str, operator: str, detail: str = '') -> tuple[bool, str]:
-    """统一的操作完成处理：Excel写入成功即算成功，报表和推送不阻塞
+    """统一的操作完成处理：Excel写入成功即算成功，报表和推送在后台异步执行
+    
+    关键：先返回 HTTP 响应，再执行耗时操作，彻底解决 Render 502 超时问题
     
     Args:
         excel_written: Excel是否已成功写入
@@ -992,22 +1181,13 @@ def _finish_action(excel_written: bool, action_name: str, operator: str, detail:
     if detail:
         messages.append(detail)
     
-    # 生成报表（失败不影响结果）
-    try:
-        r_ok, r_msg = regenerate_report()
-        messages.append(r_msg)
-    except Exception as re:
-        messages.append(f'报表生成失败: {str(re)[:50]}')
-        print(f'[action] 报表生成异常: {re}')
+    # 【关键】报表生成和 Git 推送放到后台线程，不阻塞 HTTP 响应
+    # （Render 免费版 30 秒超时，Git 推送经常超过这个时间）
+    commit_msg = f'{operator}{action_name}'
+    thread = threading.Thread(target=_background_report_and_push, args=(commit_msg,), daemon=True)
+    thread.start()
     
-    # 推送 GitHub（失败不影响结果，下次会重试）
-    try:
-        p_ok, p_msg = git_push(f'{operator}{action_name}')
-        messages.append(p_msg)
-    except Exception as pe:
-        messages.append(f'Git推送失败: {str(pe)[:50]}')
-        print(f'[action] Git推送异常: {pe}')
-    
+    messages.append('（报表和同步正在后台执行）')
     return True, '; '.join(messages)
 
 
@@ -1020,6 +1200,7 @@ def action_delete_project(project_id: int, operator: str = 'unknown') -> tuple[b
         ws = wb['任务计划表']
         _safe_write_cell(ws, row_num, COL_DELETED + 1, '已删除')
         wb.save(EXCEL_FILE)
+        invalidate_projects_cache()
         return _finish_action(True, '删除项目', operator, f'ID={project_id}')
     except Exception as e:
         return False, f'删除失败: {str(e)}'
@@ -1033,6 +1214,7 @@ def action_archive_project(project_id: int, operator: str = 'unknown') -> tuple[
         ws = wb['任务计划表']
         ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='已归档')
         wb.save(EXCEL_FILE)
+        invalidate_projects_cache()
         return _finish_action(True, '归档项目', operator, f'ID={project_id}')
     except Exception as e:
         return False, f'归档失败: {str(e)}'
@@ -1046,6 +1228,7 @@ def action_unarchive_project(project_id: int, operator: str = 'unknown') -> tupl
         ws = wb['任务计划表']
         ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='')
         wb.save(EXCEL_FILE)
+        invalidate_projects_cache()
         return _finish_action(True, '取消归档项目', operator, f'ID={project_id}')
     except Exception as e:
         return False, f'取消归档失败: {str(e)}'
@@ -1068,6 +1251,7 @@ def action_edit_project(project_id: int, edit_data: dict, operator: str = 'unkno
             if field in col_map:
                 _safe_write_cell(ws, row_num, col_map[field], value)
         wb.save(EXCEL_FILE)
+        invalidate_projects_cache()
         return _finish_action(True, '编辑项目', operator, f'ID={project_id}')
     except Exception as e:
         return False, f'编辑失败: {str(e)}'
