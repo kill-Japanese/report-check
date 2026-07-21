@@ -380,7 +380,9 @@ def save_users(users: dict, push: bool = True) -> tuple[bool, str]:
         push_ok, push_msg = _git_push('更新用户数据')
         if not push_ok:
             print(f'[auth] 警告: {push_msg}')
-            return False, f'用户已保存到本地，但推送GitHub失败: {push_msg}'
+            # 【关键修复】本地保存成功就返回True，push失败只是警告
+            # 用户创建/更新的核心目的已达成，不应因网络问题判定为失败
+            return True, f'用户已保存（GitHub同步失败: {push_msg}），下次同步时将自动重试'
         return True, '用户已保存并同步到GitHub'
     
     return write_ok, '用户已保存到本地（未推送）'
