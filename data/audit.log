@@ -50,3 +50,4 @@
 [2026-07-21 03:08:10] USER_DELETE | 用户: admin | 删除用户: fix_test_1344
 [2026-07-21 03:08:24] USER_DELETE | 用户: admin | 删除用户: persist_test_1243
 [2026-07-21 03:08:38] USER_DELETE | 用户: admin | 删除用户: persist_test_1273
+[2026-07-21 03:08:52] USER_DELETE | 用户: admin | 删除用户: test_1236
