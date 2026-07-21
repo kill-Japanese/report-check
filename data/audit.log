@@ -35,3 +35,4 @@
 [2026-07-20 23:48:41] USER_CREATE | 用户: admin | 创建用户: persist_test_1243, 角色: viewer
 [2026-07-20 23:53:00] USER_CREATE | 用户: admin | 创建用户: persist_test_1273, 角色: viewer
 [2026-07-20 23:54:29] USER_CREATE | 用户: admin | 创建用户: fix_test_1344, 角色: viewer
+[2026-07-21 00:20:36] USER_CREATE | 用户: admin | 创建用户: api_test_1470, 角色: viewer
