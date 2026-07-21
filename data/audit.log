@@ -45,3 +45,4 @@
 [2026-07-21 02:30:44] USER_DELETE | 用户: admin | 删除用户: test_fix_1251
 [2026-07-21 03:07:14] USER_DELETE | 用户: admin | 删除用户: api_test_1470
 [2026-07-21 03:07:30] USER_DELETE | 用户: admin | 删除用户: e2e_test_1564
+[2026-07-21 03:07:43] USER_DELETE | 用户: admin | 删除用户: e2e_test_1660
