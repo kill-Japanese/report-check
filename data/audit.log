@@ -49,3 +49,4 @@
 [2026-07-21 02:37:35] USER_DELETE | 用户: admin | 删除用户: e2e_test_1564
 [2026-07-21 02:37:50] PASSWORD_CHANGE | 用户: admin | 修改密码成功
 [2026-07-21 02:37:55] USER_DELETE | 用户: admin | 删除用户: e2e_test_1660
+[2026-07-21 02:38:00] USER_DELETE | 用户: admin | 删除用户: e2e_test_1749
