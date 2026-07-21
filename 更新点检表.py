@@ -3274,6 +3274,11 @@ async function callActionApi(endpoint, data) {
             RAW_DATA.stats = RAW_DATA.stats || {};
             RAW_DATA.stats.total = active.length;
           }
+          // 【关键修复】必须更新 collabLastUpdate，否则下一次版本检查会认为有更新
+          // 导致不必要的刷新，甚至可能拉到旧数据覆盖当前状态
+          if (projData.lastUpdate) {
+            collabLastUpdate = projData.lastUpdate;
+          }
         }
       } catch (refreshErr) {
         console.warn('[API] 刷新项目数据失败:', refreshErr);

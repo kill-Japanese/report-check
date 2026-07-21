@@ -375,6 +375,9 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
         # 撤销刚才的 commit（避免重复提交）
         subprocess.run(['git', 'reset', '--soft', 'HEAD~1'], capture_output=True, cwd=BASE_DIR, timeout=5)
         
+        # 【关键修复】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
+        archive_flags = _backup_archive_deleted_flags()
+        
         # fetch
         fetch = subprocess.run(
             ['git', 'fetch', 'origin', 'main'],
@@ -386,6 +389,9 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
             ['git', 'pull', 'origin', 'main', '--no-edit'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
+        
+        # 【关键修复】git pull 后恢复归档/删除标志
+        _restore_archive_deleted_flags(archive_flags)
         if pull.returncode != 0:
             # 有冲突，回退到 GitHub API
             print(f'[sync] pull失败，回退到GitHub API: {pull.stderr[:80]}')
