@@ -335,6 +335,18 @@ def save_collab_data(data: dict):
 
 # ==================== Excel 读写（核心） ====================
 
+def _fmt_date(d, is_start=True):
+    """日期格式化：将 datetime/Timestamp 转为字符串（与更新点检表.py一致）"""
+    if d is None or (isinstance(d, float) and pd.isna(d)):
+        return ''
+    if d == '/' or str(d).strip() == '/':
+        return '1900-01-01' if is_start else '2100-01-01'
+    if isinstance(d, pd.Timestamp):
+        return d.strftime('%Y-%m-%d')
+    if isinstance(d, datetime):
+        return d.strftime('%Y-%m-%d')
+    return str(d)
+
 def read_excel_projects() -> list:
     """从原始 Excel 读取所有项目资源（与更新点检表.py 逻辑一致）"""
     if not os.path.exists(EXCEL_FILE):
@@ -407,13 +419,13 @@ def read_excel_projects() -> list:
                 'id': idx,
                 '部门': current_dept if current_dept and not (isinstance(current_dept, float) and pd.isna(current_dept)) else '',
                 '项目': current_project,
-                '项目开始时间': current_start,
-                '项目结束时间': current_end,
+                '项目开始时间': _fmt_date(current_start, True),
+                '项目结束时间': _fmt_date(current_end, False),
                 '项目描述': current_desc,
                 '资源类型': resource_type,
                 '资源名称': resource_name,
-                '资源开始时间': row[11] if pd.notna(row[11]) else None,
-                '资源结束时间': row[12] if pd.notna(row[12]) else None,
+                '资源开始时间': _fmt_date(row[11] if pd.notna(row[11]) else None, True),
+                '资源结束时间': _fmt_date(row[12] if pd.notna(row[12]) else None, False),
                 '日平均工时': row[13] if pd.notna(row[13]) else 0,
                 '已归档': is_archived,
             })
