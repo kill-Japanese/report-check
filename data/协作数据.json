@@ -10,16 +10,12 @@
     "82": {
       "time": "2026-07-21T06:21:42.344Z",
       "project": "TEST WEB"
-    },
-    "86": {
-      "time": "2026-07-21T11:36:53.002Z",
-      "project": "TEST WEB",
-      "fromExcel": true
     }
   },
   "customEmails": {
     "刘璠": "fan.liu@hxgroup.com",
-    "张丹": "dan.zhang@hxgroup.com"
+    "张丹": "dan.zhang@hxgroup.com",
+    "戴于东": "yudong.dai@hxgroup.com"
   },
   "newProjects": [],
   "deletedIds": [
@@ -27,5 +23,5 @@
     80,
     79
   ],
-  "lastUpdate": "2026-07-21T13:01:39.310637"
+  "lastUpdate": "1784640622728"
 }
