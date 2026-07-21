@@ -18,9 +18,7 @@
   "customEmails": {
     "张丹": "dan.zhang@hxgroup.com",
     "刘璠": "fan.liu@hxgroup.com",
-    "袁知正": "zhizheng.yuan@hxgroup.com",
-    "易祥": "xiang.yi@hxgroup.com",
-    "戴于东": "yudong.dai@hxgroup.com"
+    "袁知正": "zhizheng.yuan@hxgroup.com"
   },
   "newProjects": [],
   "deletedIds": [
@@ -28,5 +26,5 @@
     80,
     79
   ],
-  "lastUpdate": "2026-07-21T09:09:57.110408"
+  "lastUpdate": "2026-07-21T09:07:33.964571"
 }
