@@ -48,3 +48,4 @@
 [2026-07-21 03:07:43] USER_DELETE | 用户: admin | 删除用户: e2e_test_1660
 [2026-07-21 03:07:56] USER_DELETE | 用户: admin | 删除用户: e2e_test_1749
 [2026-07-21 03:08:10] USER_DELETE | 用户: admin | 删除用户: fix_test_1344
+[2026-07-21 03:08:24] USER_DELETE | 用户: admin | 删除用户: persist_test_1243
