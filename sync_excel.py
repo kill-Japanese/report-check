@@ -113,27 +113,36 @@ def ensure_git_repo() -> tuple[bool, str]:
 # ==================== Git 操作 ====================
 
 def git_pull() -> tuple[bool, str]:
-    """从 GitHub 拉取最新数据，并强制恢复关键数据文件（用户管理.xlsx 等）
+    """从 GitHub 拉取最新数据（双路径：git命令优先，GitHub API兜底）
     
-    【严重修复】之前只在文件不存在时才从远程恢复，
-    但如果文件存在但是旧版本（或被意外修改），不会被更新。
-    现在对关键数据文件（用户管理.xlsx, 超声波户表脚本.xlsx）
-    强制用远程 origin/main 的最新版本覆盖，确保数据一致性。
-    
-    设计决策：对于数据文件，远程 GitHub 是唯一可信的持久化数据源。
-    如果本地有未提交的用户变更，说明之前的 push 失败了，
-    在重新部署场景下这些变更本就会丢失（容器重建），
-    所以强制用远程覆盖是最安全可靠的方案。
+    【关键修复】Render 环境中 git 命令可能不存在，
+    自动检测并回退到 GitHub REST API 模式。
     """
+    # 检查 git 命令是否可用
+    git_available = False
     try:
-        # 【关键修复】先确保 Git 仓库存在（Render 部署环境保障）
+        result = subprocess.run(['git', '--version'], capture_output=True, timeout=5)
+        git_available = (result.returncode == 0) and os.path.exists(os.path.join(BASE_DIR, '.git'))
+    except (FileNotFoundError, OSError):
+        git_available = False
+    
+    if not git_available:
+        # 回退到 GitHub API 模式
+        try:
+            from github_sync import github_api_pull
+            print('[sync] git 不可用，使用 GitHub API 模式拉取')
+            return github_api_pull()
+        except Exception as api_e:
+            return False, f'git不可用且API拉取失败: {api_e}'
+    
+    # git 可用，使用原有逻辑
+    try:
         ensure_ok, ensure_msg = ensure_git_repo()
         if not ensure_ok:
             return False, f'Git仓库不可用: {ensure_msg}'
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
 
-        # 1. 先 fetch 远程最新（不修改本地文件）
         fetch = subprocess.run(
             ['git', 'fetch', 'origin', 'main'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
@@ -141,38 +150,22 @@ def git_pull() -> tuple[bool, str]:
         if fetch.returncode != 0:
             return False, f'fetch失败: {fetch.stderr[:200]}'
 
-        # 2. 【严重修复】强制从远程 origin/main 恢复所有关键数据文件
-        #    无论文件是否存在，都用远程最新版本覆盖
-        critical_files = [
-            '用户管理.xlsx',
-            '超声波户表脚本.xlsx',
-        ]
+        critical_files = ['用户管理.xlsx', '超声波户表脚本.xlsx']
         restored = []
         for f in critical_files:
             fpath = os.path.join(BASE_DIR, f)
             existed_before = os.path.exists(fpath)
-
-            # 强制从远程恢复（覆盖本地）
             checkout = subprocess.run(
                 ['git', 'checkout', 'origin/main', '--', f],
                 capture_output=True, text=True, cwd=BASE_DIR, timeout=10
             )
             if checkout.returncode == 0 and os.path.exists(fpath):
-                if not existed_before:
-                    restored.append(f'{f}(新建)')
-                else:
-                    restored.append(f'{f}(已同步)')
-            else:
-                # checkout 失败可能是因为远程也没有这个文件
-                # 这种情况不报错，交给后续流程处理
-                pass
+                restored.append(f'{f}(新建)' if not existed_before else f'{f}(已同步)')
 
-        # 3. 执行正常的 git pull（合并远程变更到本地）
         pull = subprocess.run(
             ['git', 'pull', 'origin', 'main'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
-        # pull 失败不致命（比如有本地未提交变更），只要关键文件恢复了就行
 
         msg_parts = ['拉取成功']
         if restored:
@@ -184,20 +177,36 @@ def git_pull() -> tuple[bool, str]:
         return False, f'拉取失败: {str(e)}'
 
 def git_push(message: str = '同步数据') -> tuple[bool, str]:
-    """将变更提交并推送到 GitHub（带失败重试机制）
+    """将变更提交并推送到 GitHub（双路径：git命令优先，GitHub API兜底）
     
-    修复：增加未推送 commit 检测和 push 失败回滚机制，
-         确保网络故障后可以重试推送。
+    【关键修复】Render 环境中 git 命令可能不存在，
+    自动检测并回退到 GitHub REST API 模式。
     """
+    # 检查 git 命令是否可用
+    git_available = False
     try:
-        # 【关键修复】先确保 Git 仓库存在（Render 部署环境保障）
+        result = subprocess.run(['git', '--version'], capture_output=True, timeout=5)
+        git_available = (result.returncode == 0) and os.path.exists(os.path.join(BASE_DIR, '.git'))
+    except (FileNotFoundError, OSError):
+        git_available = False
+    
+    if not git_available:
+        # 回退到 GitHub API 模式
+        try:
+            from github_sync import github_api_push
+            print('[sync] git 不可用，使用 GitHub API 模式推送')
+            return github_api_push(message)
+        except Exception as api_e:
+            return False, f'git不可用且API推送失败: {api_e}'
+    
+    # git 可用，使用原有逻辑
+    try:
         ensure_ok, ensure_msg = ensure_git_repo()
         if not ensure_ok:
             return False, f'Git仓库不可用: {ensure_msg}'
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
 
-        # ===== 修复：先检查是否有未推送的 commit =====
         ahead = subprocess.run(
             ['git', 'rev-list', '--count', 'origin/main..HEAD'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=10
@@ -208,7 +217,6 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
             ahead_count = 0
 
         if ahead_count > 0:
-            # 有未推送的 commit，直接 push
             push = subprocess.run(
                 ['git', 'push', 'origin', 'main'],
                 capture_output=True, text=True, cwd=BASE_DIR, timeout=30
@@ -217,7 +225,6 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
                 return False, f'推送失败（重试 {ahead_count} 个待推送提交）: {push.stderr[:200]}'
             return True, f'已推送 {ahead_count} 个待提交到 GitHub'
 
-        # 检查是否有变更
         result = subprocess.run(
             ['git', 'status', '--porcelain'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=10
@@ -241,7 +248,6 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         if push_result.returncode != 0:
-            # push 失败，撤销 commit，保留工作区变更以便重试
             subprocess.run(
                 ['git', 'reset', '--soft', 'HEAD~1'],
                 capture_output=True, cwd=BASE_DIR, timeout=10
