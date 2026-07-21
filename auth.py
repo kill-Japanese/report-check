@@ -240,7 +240,13 @@ def _git_push(message: str) -> tuple[bool, str]:
                 capture_output=True, text=True, cwd=BASE_DIR, timeout=30
             )
             if push.returncode != 0:
-                return False, f'推送失败（重试 {ahead_count} 个待推送提交）: {push.stderr[:200]}'
+                # 【关键修复】git push 失败时，回退到 GitHub API 模式推送
+                try:
+                    from github_sync import github_api_push
+                    print('[auth] git push 失败，回退到 GitHub API 模式')
+                    return github_api_push(message)
+                except Exception as api_e:
+                    return False, f'推送失败（git+API均失败）: {push.stderr[:200]}'
             return True, f'已推送 {ahead_count} 个待提交到 GitHub'
 
         subprocess.run(['git', 'add', '用户管理.xlsx', 'data/'],
@@ -272,7 +278,13 @@ def _git_push(message: str) -> tuple[bool, str]:
                 ['git', 'reset', '--soft', 'HEAD~1'],
                 capture_output=True, cwd=BASE_DIR, timeout=10
             )
-            return False, f'推送失败（已撤销本地提交，可重试）: {push.stderr[:200]}'
+            # 【关键修复】git push 失败时，回退到 GitHub API 模式推送
+            try:
+                from github_sync import github_api_push
+                print('[auth] git push 失败，回退到 GitHub API 模式')
+                return github_api_push(message)
+            except Exception as api_e:
+                return False, f'推送失败（git+API均失败）: {push.stderr[:200]}'
 
         return True, '已同步到 GitHub'
     except Exception as e:
@@ -859,7 +871,13 @@ def sync_to_github(message: str = '同步数据') -> tuple[bool, str]:
                 capture_output=True, text=True, cwd=BASE_DIR, timeout=30
             )
             if push.returncode != 0:
-                return False, f'推送失败（重试 {ahead_count} 个待推送提交）: {push.stderr[:200]}'
+                # 【关键修复】git push 失败时，回退到 GitHub API 模式推送
+                try:
+                    from github_sync import github_api_push
+                    print('[auth] git push 失败，回退到 GitHub API 模式')
+                    return github_api_push(message)
+                except Exception as api_e:
+                    return False, f'推送失败（git+API均失败）: {push.stderr[:200]}'
             return True, f'已推送 {ahead_count} 个待提交到 GitHub'
 
         result = subprocess.run(
@@ -892,7 +910,16 @@ def sync_to_github(message: str = '同步数据') -> tuple[bool, str]:
                 ['git', 'reset', '--soft', 'HEAD~1'],
                 capture_output=True, cwd=BASE_DIR, timeout=10
             )
-            return False, f'推送失败（已撤销本地提交，可重试）: {push_result.stderr[:200]}'
+            # 【关键修复】git push 失败时，回退到 GitHub API 模式推送
+            try:
+                from github_sync import github_api_push
+                print('[auth] git push 失败，回退到 GitHub API 模式')
+                ok, msg = github_api_push(message)
+                if ok:
+                    _audit_log('GITHUB_SYNC', 'system', message)
+                return ok, msg
+            except Exception as api_e:
+                return False, f'推送失败（git+API均失败）: {push_result.stderr[:200]}'
 
         _audit_log('GITHUB_SYNC', 'system', message)
         return True, '数据已同步到 GitHub'
