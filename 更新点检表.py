@@ -4372,49 +4372,68 @@ function openAddProjectModal() {
 }
 
 async function submitNewProject() {
-  const dept = document.getElementById('newProjDept').value;
-  const projName = document.getElementById('newProjName').value.trim();
-  const projDesc = document.getElementById('newProjDesc').value.trim();
-  const resType = document.getElementById('newResType').value;
-  const resPerson = document.getElementById('newResPerson').value;
-  const startDate = document.getElementById('newStartDate').value;
-  const endDate = document.getElementById('newEndDate').value;
-  const hours = parseFloat(document.getElementById('newHours').value) || 0;
-  const projStart = document.getElementById('newProjStart').value || '';
-  const projEnd = document.getElementById('newProjEnd').value || '';
-  
-  if (!projName) { alert('请填写项目名称'); return; }
-  if (!resType) { alert('请选择资源类型'); return; }
-  if (!resPerson) { alert('请选择负责人'); return; }
-  if (!startDate) { alert('请选择开始时间'); return; }
-  if (!endDate) { alert('请选择结束时间'); return; }
-  
-  const newProject = {
-    部门: dept,
-    项目: projName,
-    项目开始时间: projStart || '1900-01-01',
-    项目结束时间: projEnd || '2100-01-01',
-    项目描述: projDesc,
-    资源类型: resType,
-    资源名称: resPerson,
-    资源开始时间: startDate,
-    资源结束时间: endDate,
-    日平均工时: hours,
-    已归档: false
-  };
-  
-  if (collabIsEnabled()) {
-    // 【简化方案】协作模式：直接调用API
-    const result = await callActionApi('add', newProject);
-    if (result && result.success) {
-      updateStats();
-      renderTable();
-      initResourceSearch();
-      showSaved();
-      document.querySelector('.modal-overlay').remove();
-      alert(`✅ 已添加新项目：${projName} - ${resType}（${resPerson}）`);
+  try {
+    const deptEl = document.getElementById('newProjDept');
+    const projNameEl = document.getElementById('newProjName');
+    const projDescEl = document.getElementById('newProjDesc');
+    const resTypeEl = document.getElementById('newResType');
+    const resPersonEl = document.getElementById('newResPerson');
+    const startDateEl = document.getElementById('newStartDate');
+    const endDateEl = document.getElementById('newEndDate');
+    const hoursEl = document.getElementById('newHours');
+    const projStartEl = document.getElementById('newProjStart');
+    const projEndEl = document.getElementById('newProjEnd');
+    
+    if (!deptEl || !projNameEl) {
+      alert('错误：表单元素未找到，请刷新页面重试');
+      return;
     }
-  } else {
+    
+    const dept = deptEl.value;
+    const projName = projNameEl.value.trim();
+    const projDesc = projDescEl ? projDescEl.value.trim() : '';
+    const resType = resTypeEl.value;
+    const resPerson = resPersonEl.value;
+    const startDate = startDateEl.value;
+    const endDate = endDateEl.value;
+    const hours = parseFloat(hoursEl.value) || 0;
+    const projStart = projStartEl ? (projStartEl.value || '') : '';
+    const projEnd = projEndEl ? (projEndEl.value || '') : '';
+    
+    if (!projName) { alert('请填写项目名称'); return; }
+    if (!resType) { alert('请选择资源类型'); return; }
+    if (!resPerson) { alert('请选择负责人'); return; }
+    if (!startDate) { alert('请选择开始时间'); return; }
+    if (!endDate) { alert('请选择结束时间'); return; }
+    
+    const newProject = {
+      部门: dept,
+      项目: projName,
+      项目开始时间: projStart || '1900-01-01',
+      项目结束时间: projEnd || '2100-01-01',
+      项目描述: projDesc,
+      资源类型: resType,
+      资源名称: resPerson,
+      资源开始时间: startDate,
+      资源结束时间: endDate,
+      日平均工时: hours,
+      已归档: false
+    };
+    
+    if (collabIsEnabled()) {
+      // 【简化方案】协作模式：直接调用API
+      const result = await callActionApi('add', newProject);
+      if (result && result.success) {
+        updateStats();
+        renderTable();
+        initResourceSearch();
+        showSaved();
+        document.querySelector('.modal-overlay').remove();
+        alert(`✅ 已添加新项目：${projName} - ${resType}（${resPerson}）`);
+      } else if (result && !result.success) {
+        alert('❌ 添加失败：' + (result.message || '未知错误'));
+      }
+    } else {
     // 非协作模式：本地逻辑（兼容）
     const today = new Date(RAW_DATA.today);
     const end = new Date(endDate);
@@ -4441,6 +4460,10 @@ async function submitNewProject() {
     collabMarkDirty();
     document.querySelector('.modal-overlay').remove();
     alert(`✅ 已添加新项目：${projName} - ${resType}（${resPerson}）`);
+    }
+  } catch (e) {
+    console.error('[添加项目] 错误:', e);
+    alert('❌ 添加项目出错：' + (e.message || e) + '\\n\\n请打开浏览器控制台(F12)查看详细错误信息');
   }
 }
 
