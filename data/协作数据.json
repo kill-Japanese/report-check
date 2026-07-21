@@ -5,6 +5,10 @@
   "archived": {},
   "customEmails": {},
   "newProjects": [],
-  "deletedIds": [],
-  "lastUpdate": "2026-07-21T04:31:30.077753"
+  "deletedIds": [
+    75,
+    76,
+    78
+  ],
+  "lastUpdate": "2026-07-21T04:32:15.200461"
 }
