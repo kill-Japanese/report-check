@@ -912,7 +912,11 @@ def _find_row_for_project_id(project_id: int):
         return None, None
 
 def action_add_project(project_data: dict, operator: str = 'unknown') -> tuple[bool, str]:
-    """【简化方案】新增项目：直接写入 Excel + 生成报表 + 推送 GitHub"""
+    """【简化方案】新增项目：直接写入 Excel + 生成报表 + 推送 GitHub
+    
+    关键：只要 Excel 写入成功就算成功，报表生成和 Git 推送不阻塞主操作
+    （避免因环境问题导致新增失败，但数据实际已写入）
+    """
     try:
         from openpyxl import load_workbook
         if not os.path.exists(EXCEL_FILE):
@@ -946,15 +950,69 @@ def action_add_project(project_data: dict, operator: str = 'unknown') -> tuple[b
         
         wb.save(EXCEL_FILE)
         
-        # 生成报表 + 推送
-        r_ok, r_msg = regenerate_report()
-        p_ok, p_msg = git_push(f'{operator}新增项目: {project_data.get("项目", "")}')
-        return (r_ok and p_ok), f'新增成功(ID={new_id}); {r_msg}; {p_msg}'
+        # 【关键】Excel 已写入成功！后续操作（报表+推送）不阻塞
+        messages = [f'新增成功(ID={new_id})']
+        
+        # 生成报表（失败不影响结果）
+        try:
+            r_ok, r_msg = regenerate_report()
+            messages.append(r_msg)
+        except Exception as re:
+            messages.append(f'报表生成失败: {str(re)[:50]}')
+            print(f'[action_add] 报表生成异常: {re}')
+        
+        # 推送 GitHub（失败不影响结果，下次会重试）
+        try:
+            p_ok, p_msg = git_push(f'{operator}新增项目: {project_data.get("项目", "")}')
+            messages.append(p_msg)
+        except Exception as pe:
+            messages.append(f'Git推送失败: {str(pe)[:50]}')
+            print(f'[action_add] Git推送异常: {pe}')
+        
+        return True, '; '.join(messages)
     except Exception as e:
         return False, f'新增失败: {str(e)}'
 
+def _finish_action(excel_written: bool, action_name: str, operator: str, detail: str = '') -> tuple[bool, str]:
+    """统一的操作完成处理：Excel写入成功即算成功，报表和推送不阻塞
+    
+    Args:
+        excel_written: Excel是否已成功写入
+        action_name: 操作名称（如"新增项目"、"归档"）
+        operator: 操作人
+        detail: 额外详情
+    
+    Returns:
+        (是否成功, 消息)
+    """
+    if not excel_written:
+        return False, f'{action_name}失败：Excel写入未完成'
+    
+    messages = [f'{action_name}成功']
+    if detail:
+        messages.append(detail)
+    
+    # 生成报表（失败不影响结果）
+    try:
+        r_ok, r_msg = regenerate_report()
+        messages.append(r_msg)
+    except Exception as re:
+        messages.append(f'报表生成失败: {str(re)[:50]}')
+        print(f'[action] 报表生成异常: {re}')
+    
+    # 推送 GitHub（失败不影响结果，下次会重试）
+    try:
+        p_ok, p_msg = git_push(f'{operator}{action_name}')
+        messages.append(p_msg)
+    except Exception as pe:
+        messages.append(f'Git推送失败: {str(pe)[:50]}')
+        print(f'[action] Git推送异常: {pe}')
+    
+    return True, '; '.join(messages)
+
+
 def action_delete_project(project_id: int, operator: str = 'unknown') -> tuple[bool, str]:
-    """【简化方案】删除项目：软删除（V列标记）+ 生成报表 + 推送 GitHub"""
+    """【简化方案】删除项目：软删除（V列标记）"""
     wb, row_num = _find_row_for_project_id(project_id)
     if wb is None:
         return False, f'项目ID={project_id} 不存在'
@@ -962,14 +1020,12 @@ def action_delete_project(project_id: int, operator: str = 'unknown') -> tuple[b
         ws = wb['任务计划表']
         _safe_write_cell(ws, row_num, COL_DELETED + 1, '已删除')
         wb.save(EXCEL_FILE)
-        r_ok, r_msg = regenerate_report()
-        p_ok, p_msg = git_push(f'{operator}删除项目ID={project_id}')
-        return (r_ok and p_ok), f'删除成功; {r_msg}; {p_msg}'
+        return _finish_action(True, '删除项目', operator, f'ID={project_id}')
     except Exception as e:
         return False, f'删除失败: {str(e)}'
 
 def action_archive_project(project_id: int, operator: str = 'unknown') -> tuple[bool, str]:
-    """【简化方案】归档项目：A列标记"已归档" + 生成报表 + 推送 GitHub"""
+    """【简化方案】归档项目：A列标记"已归档" """
     wb, row_num = _find_row_for_project_id(project_id)
     if wb is None:
         return False, f'项目ID={project_id} 不存在'
@@ -977,14 +1033,12 @@ def action_archive_project(project_id: int, operator: str = 'unknown') -> tuple[
         ws = wb['任务计划表']
         ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='已归档')
         wb.save(EXCEL_FILE)
-        r_ok, r_msg = regenerate_report()
-        p_ok, p_msg = git_push(f'{operator}归档项目ID={project_id}')
-        return (r_ok and p_ok), f'归档成功; {r_msg}; {p_msg}'
+        return _finish_action(True, '归档项目', operator, f'ID={project_id}')
     except Exception as e:
         return False, f'归档失败: {str(e)}'
 
 def action_unarchive_project(project_id: int, operator: str = 'unknown') -> tuple[bool, str]:
-    """【简化方案】取消归档：清空A列归档标志 + 生成报表 + 推送 GitHub"""
+    """【简化方案】取消归档：清空A列归档标志"""
     wb, row_num = _find_row_for_project_id(project_id)
     if wb is None:
         return False, f'项目ID={project_id} 不存在'
@@ -992,20 +1046,17 @@ def action_unarchive_project(project_id: int, operator: str = 'unknown') -> tupl
         ws = wb['任务计划表']
         ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='')
         wb.save(EXCEL_FILE)
-        r_ok, r_msg = regenerate_report()
-        p_ok, p_msg = git_push(f'{operator}取消归档项目ID={project_id}')
-        return (r_ok and p_ok), f'取消归档成功; {r_msg}; {p_msg}'
+        return _finish_action(True, '取消归档项目', operator, f'ID={project_id}')
     except Exception as e:
         return False, f'取消归档失败: {str(e)}'
 
 def action_edit_project(project_id: int, edit_data: dict, operator: str = 'unknown') -> tuple[bool, str]:
-    """【简化方案】编辑项目：直接修改Excel单元格 + 生成报表 + 推送 GitHub"""
+    """【简化方案】编辑项目：直接修改Excel单元格"""
     wb, row_num = _find_row_for_project_id(project_id)
     if wb is None:
         return False, f'项目ID={project_id} 不存在'
     try:
         ws = wb['任务计划表']
-        # 列映射：5=部门, 6=项目, 7=项目开始, 8=项目结束, 9=描述, 10=资源类型, 11=资源名称, 12=资源开始, 13=资源结束, 14=工时
         col_map = {
             '部门': 5, '项目': 6,
             '项目开始时间': 7, '项目结束时间': 8,
@@ -1017,9 +1068,7 @@ def action_edit_project(project_id: int, edit_data: dict, operator: str = 'unkno
             if field in col_map:
                 _safe_write_cell(ws, row_num, col_map[field], value)
         wb.save(EXCEL_FILE)
-        r_ok, r_msg = regenerate_report()
-        p_ok, p_msg = git_push(f'{operator}编辑项目ID={project_id}')
-        return (r_ok and p_ok), f'编辑成功; {r_msg}; {p_msg}'
+        return _finish_action(True, '编辑项目', operator, f'ID={project_id}')
     except Exception as e:
         return False, f'编辑失败: {str(e)}'
 
