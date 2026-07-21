@@ -12,12 +12,14 @@
       "project": "TEST WEB"
     }
   },
-  "customEmails": {},
+  "customEmails": {
+    "刘璠": "fan.liu@hxgroup.com"
+  },
   "newProjects": [],
   "deletedIds": [
     81,
     80,
     79
   ],
-  "lastUpdate": "2026-07-21T11:22:47.620313"
+  "lastUpdate": "2026-07-21T11:24:46.494932"
 }
