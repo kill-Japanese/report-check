@@ -104,16 +104,98 @@ def should_use_github_api() -> bool:
 
 # ==================== GitHub 配置解析 ====================
 
+def _parse_github_url(url: str) -> tuple[str, str, str]:
+    """
+    从 GitHub URL 中解析 token, owner, repo
+    支持格式：
+    - https://token@github.com/owner/repo.git
+    - https://github.com/owner/repo.git
+    - git@github.com:owner/repo.git
+    """
+    token = ''
+    owner = ''
+    repo = ''
+    
+    url_clean = url.rstrip('.git').rstrip('/').strip()
+    
+    if '@github.com' in url_clean:
+        # https://token@github.com/owner/repo
+        token_part = url_clean.split('@github.com')[0]
+        if 'https://' in token_part or 'http://' in token_part:
+            auth_part = token_part.split('://')[1]
+            if ':' in auth_part:
+                token = auth_part.split(':')[1]
+            else:
+                token = auth_part
+        path_part = url_clean.split('@github.com/')[1] if '@github.com/' in url_clean else url_clean.split('@github.com:')[1]
+        parts = path_part.rstrip('/').split('/')
+        if len(parts) >= 2:
+            owner = parts[0]
+            repo = '/'.join(parts[1:])
+    elif 'github.com/' in url_clean:
+        # https://github.com/owner/repo
+        path_part = url_clean.split('github.com/')[1]
+        parts = path_part.rstrip('/').split('/')
+        if len(parts) >= 2:
+            owner = parts[0]
+            repo = '/'.join(parts[1:])
+    elif 'github.com:' in url_clean:
+        # git@github.com:owner/repo
+        path_part = url_clean.split('github.com:')[1]
+        parts = path_part.rstrip('/').split('/')
+        if len(parts) >= 2:
+            owner = parts[0]
+            repo = '/'.join(parts[1:])
+    
+    return token, owner, repo
+
+
 def _get_github_config() -> tuple[str, str, str]:
     """
-    从环境变量或 git 配置中获取 GitHub 认证信息
+    从多种来源获取 GitHub 认证信息（按优先级）
+    1. 环境变量 GITHUB_TOKEN（最高优先级）
+    2. .git/config 文件中的 remote URL（即使 git 命令不可用）
+    3. git remote 命令（git 命令可用时）
+    4. 默认值兜底
+    
     返回: (token, owner, repo)
     """
+    # 第1优先级：环境变量
     token = os.environ.get('GITHUB_TOKEN', '')
     owner = os.environ.get('GITHUB_OWNER', '')
     repo = os.environ.get('GITHUB_REPO', '')
     
-    # 尝试从 git remote URL 解析
+    # 第2优先级：.git/config 文件（即使 git 命令不可用，只要文件存在）
+    if not token or not owner or not repo:
+        git_config = os.path.join(BASE_DIR, '.git', 'config')
+        if os.path.exists(git_config):
+            try:
+                with open(git_config, 'r') as f:
+                    config_content = f.read()
+                # 解析 remote origin 的 URL
+                in_origin = False
+                for line in config_content.split('\n'):
+                    line = line.strip()
+                    if line == '[remote "origin"]':
+                        in_origin = True
+                        continue
+                    if in_origin and line.startswith('['):
+                        in_origin = False
+                        continue
+                    if in_origin and line.startswith('url ='):
+                        url = line.split('url =')[1].strip()
+                        t, o, r = _parse_github_url(url)
+                        if t and not token:
+                            token = t
+                        if o and not owner:
+                            owner = o
+                        if r and not repo:
+                            repo = r
+                        break
+            except Exception as e:
+                print(f'[GitHub Config] 读取 .git/config 失败: {e}')
+    
+    # 第3优先级：git remote 命令（git 命令可用时）
     if not token or not owner or not repo:
         try:
             result = subprocess.run(
@@ -123,43 +205,30 @@ def _get_github_config() -> tuple[str, str, str]:
             for line in result.stdout.split('\n'):
                 if 'origin' in line and 'github.com' in line:
                     url = line.split()[1]
-                    if 'github.com' in url:
-                        # 解析各种格式:
-                        # https://token@github.com/owner/repo.git
-                        # https://github.com/owner/repo.git
-                        # git@github.com:owner/repo.git
-                        url_clean = url.rstrip('.git').rstrip('/')
-                        
-                        # 提取 token
-                        if '@github.com' in url_clean:
-                            token_part = url_clean.split('@github.com')[0]
-                            if 'https://' in token_part or 'http://' in token_part:
-                                auth_part = token_part.split('://')[1]
-                                if ':' in auth_part:
-                                    token = auth_part.split(':')[1]
-                                else:
-                                    token = auth_part
-                            path_part = url_clean.split('@github.com/')[1]
-                        elif 'github.com/' in url_clean:
-                            path_part = url_clean.split('github.com/')[1]
-                        elif 'github.com:' in url_clean:
-                            path_part = url_clean.split('github.com:')[1]
-                        else:
-                            continue
-                        
-                        parts = path_part.rstrip('/').split('/')
-                        if len(parts) >= 2:
-                            owner = parts[0]
-                            repo = '/'.join(parts[1:])
-                            break
-        except:
+                    t, o, r = _parse_github_url(url)
+                    if t and not token:
+                        token = t
+                    if o and not owner:
+                        owner = o
+                    if r and not repo:
+                        repo = r
+                    break
+        except (FileNotFoundError, OSError):
+            pass  # git 命令不可用
+        except Exception:
             pass
     
-    # 如果还是没有，用默认值（本项目）
+    # 第4优先级：默认值（本项目）
     if not owner:
         owner = 'kill-Japanese'
     if not repo:
         repo = 'report-check'
+    
+    # 调试信息
+    if not token:
+        print(f'[GitHub Config] ⚠️  未找到 GitHub Token，请设置 GITHUB_TOKEN 环境变量')
+    else:
+        print(f'[GitHub Config] Token: ***{token[-4:] if len(token) > 4 else "***"}, Owner: {owner}, Repo: {repo}')
     
     return token, owner, repo
 

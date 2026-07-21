@@ -8,6 +8,10 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      # GitHub Token（必须设置！用于 API 同步模式）
+      # 在 Render 控制台中设置此环境变量，值为您的 GitHub Personal Access Token
+      - key: GITHUB_TOKEN
+        sync: false
       # Git 配置（Render 环境中确保 Git 可用）
       - key: GIT_COMMITTER_NAME
         value: Report Check Server
