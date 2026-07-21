@@ -10,6 +10,11 @@
     "82": {
       "time": "2026-07-21T06:21:42.344Z",
       "project": "TEST WEB"
+    },
+    "86": {
+      "time": "2026-07-21T11:36:53.002Z",
+      "project": "TEST WEB",
+      "fromExcel": true
     }
   },
   "customEmails": {
@@ -22,5 +27,5 @@
     80,
     79
   ],
-  "lastUpdate": "2026-07-21T11:35:06.029959"
+  "lastUpdate": "2026-07-21T11:36:54.576863"
 }
