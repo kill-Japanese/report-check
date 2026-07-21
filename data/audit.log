@@ -77,3 +77,4 @@
 [2026-07-21 03:46:44] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 300 秒
 [2026-07-21 03:47:11] LOGIN | 用户: xjq | 登录成功
 [2026-07-21 03:47:55] USER_CREATE | 用户: admin | 创建用户: yzz, 角色: editor
+[2026-07-21 03:48:10] USER_CREATE | 用户: admin | 创建用户: ycx, 角色: editor
