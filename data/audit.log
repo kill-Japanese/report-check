@@ -45,3 +45,5 @@
 [2026-07-21 02:26:00] PASSWORD_CHANGE | 用户: admin | 修改密码成功
 [2026-07-21 02:26:09] USER_DELETE | 用户: admin | 删除用户: api_test_1470
 [2026-07-21 02:26:23] USER_DELETE | 用户: admin | 删除用户: e2e_test_1564
+[2026-07-21 02:26:27] USER_DELETE | 用户: admin | 删除用户: testuser_1243
+[2026-07-21 02:26:30] USER_DELETE | 用户: admin | 删除用户: persist_test_1273
