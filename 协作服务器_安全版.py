@@ -1382,6 +1382,71 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': ok, 'message': msg})
             return
 
+        # ==================== 简化方案：原子操作端点 ====================
+        # 【简化方案】每个操作直接修改 Excel + 生成报表 + 推送 GitHub
+        # 不再通过协作数据 JSON 中转，避免多源状态不同步的问题
+
+        # --- 新增项目（需 edit 权限）---
+        if path == '/api/action/add':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            ok, msg = sync_excel.action_add_project(data, user['username'])
+            auth._audit_log('PROJECT_ADD', user['username'], msg[:100])
+            # 操作完成后返回最新项目数据
+            projects = sync_excel.read_excel_projects()
+            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            return
+
+        # --- 删除项目（需 edit 权限）---
+        if path == '/api/action/delete':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            pid = int(data.get('id', 0))
+            ok, msg = sync_excel.action_delete_project(pid, user['username'])
+            auth._audit_log('PROJECT_DELETE', user['username'], f'ID={pid}: {msg[:80]}')
+            projects = sync_excel.read_excel_projects()
+            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            return
+
+        # --- 归档项目（需 edit 权限）---
+        if path == '/api/action/archive':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            pid = int(data.get('id', 0))
+            ok, msg = sync_excel.action_archive_project(pid, user['username'])
+            auth._audit_log('PROJECT_ARCHIVE', user['username'], f'ID={pid}: {msg[:80]}')
+            projects = sync_excel.read_excel_projects()
+            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            return
+
+        # --- 取消归档（需 edit 权限）---
+        if path == '/api/action/unarchive':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            pid = int(data.get('id', 0))
+            ok, msg = sync_excel.action_unarchive_project(pid, user['username'])
+            auth._audit_log('PROJECT_UNARCHIVE', user['username'], f'ID={pid}: {msg[:80]}')
+            projects = sync_excel.read_excel_projects()
+            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            return
+
+        # --- 编辑项目（需 edit 权限）---
+        if path == '/api/action/edit':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            pid = int(data.get('id', 0))
+            edit_data = data.get('fields', {})
+            ok, msg = sync_excel.action_edit_project(pid, edit_data, user['username'])
+            auth._audit_log('PROJECT_EDIT', user['username'], f'ID={pid}: {msg[:80]}')
+            projects = sync_excel.read_excel_projects()
+            self.send_json({'success': ok, 'message': msg, 'allProjects': projects})
+            return
+
         # --- 数据同步（需 edit 权限）---
         if path == '/api/sync':
             if not self.require_permission('edit'):

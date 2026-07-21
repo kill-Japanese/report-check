@@ -225,6 +225,38 @@ def _git_push(message: str) -> tuple[bool, str]:
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
 
+        # 【关键修复】先 fetch 最新状态，检查是否落后于远程
+        # （当之前用 GitHub API 推送过时，本地会落后）
+        fetch = subprocess.run(
+            ['git', 'fetch', 'origin', 'main'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+        )
+        
+        behind = subprocess.run(
+            ['git', 'rev-list', '--count', 'HEAD..origin/main'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        try:
+            behind_count = int(behind.stdout.strip())
+        except ValueError:
+            behind_count = 0
+        
+        if behind_count > 0:
+            print(f'[auth] 本地落后远程 {behind_count} 个提交，尝试先拉取...')
+            # 尝试拉取（自动合并）
+            pull = subprocess.run(
+                ['git', 'pull', 'origin', 'main', '--no-edit'],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+            )
+            if pull.returncode != 0:
+                # 拉取失败（可能有冲突），回退到 GitHub API 模式
+                print(f'[auth] 拉取失败，回退到 GitHub API 模式: {pull.stderr[:100]}')
+                try:
+                    from github_sync import github_api_push
+                    return github_api_push(message)
+                except Exception as api_e:
+                    return False, f'本地落后远程且拉取失败: {pull.stderr[:200]}'
+
         ahead = subprocess.run(
             ['git', 'rev-list', '--count', 'origin/main..HEAD'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=10

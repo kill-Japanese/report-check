@@ -150,17 +150,56 @@ def git_pull() -> tuple[bool, str]:
         if fetch.returncode != 0:
             return False, f'fetch失败: {fetch.stderr[:200]}'
 
+        # 【关键修复】先检查本地是否有未提交的变更
+        # 如果有，说明本地数据比远程新，不能被远程覆盖！
+        # 这是用户/项目消失的核心原因：本地未推送的变更被远程旧文件覆盖
+        status_check = subprocess.run(
+            ['git', 'status', '--porcelain', '用户管理.xlsx', '超声波户表脚本.xlsx', 'data/'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        has_local_changes = bool(status_check.stdout.strip())
+        
+        # 检查本地是否比远程新（有未推送的commit）
+        ahead_check = subprocess.run(
+            ['git', 'rev-list', '--count', 'origin/main..HEAD'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        try:
+            ahead_count = int(ahead_check.stdout.strip())
+        except ValueError:
+            ahead_count = 0
+        
+        if has_local_changes or ahead_count > 0:
+            # 本地有未推送的变更，先尝试推送再拉取
+            print(f'[sync] 检测到本地有未推送变更（工作区:{has_local_changes}, 提交:{ahead_count}），先尝试推送...')
+            push_ok, push_msg = git_push('启动时同步本地未推送数据')
+            if not push_ok:
+                print(f'[sync] 警告: 本地变更推送失败（{push_msg[:60]}），将保留本地文件不被覆盖')
+                # 推送失败，只拉取不覆盖关键文件
+                pull = subprocess.run(
+                    ['git', 'pull', 'origin', 'main', '--no-edit', '--no-commit'],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+                )
+                # 如果有冲突，取消合并（保留本地版本）
+                if pull.returncode != 0:
+                    subprocess.run(['git', 'merge', '--abort'], capture_output=True, cwd=BASE_DIR, timeout=10)
+                return True, '（拉取成功；本地有未推送变更已保留）'
+            print(f'[sync] 本地变更已推送: {push_msg[:60]}')
+
         critical_files = ['用户管理.xlsx', '超声波户表脚本.xlsx']
         restored = []
         for f in critical_files:
             fpath = os.path.join(BASE_DIR, f)
             existed_before = os.path.exists(fpath)
-            checkout = subprocess.run(
-                ['git', 'checkout', 'origin/main', '--', f],
-                capture_output=True, text=True, cwd=BASE_DIR, timeout=10
-            )
-            if checkout.returncode == 0 and os.path.exists(fpath):
-                restored.append(f'{f}(新建)' if not existed_before else f'{f}(已同步)')
+            # 【关键修复】只在本地文件不存在时才从远程checkout
+            # 本地文件已存在的情况下绝不覆盖！
+            if not existed_before:
+                checkout = subprocess.run(
+                    ['git', 'checkout', 'origin/main', '--', f],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+                )
+                if checkout.returncode == 0 and os.path.exists(fpath):
+                    restored.append(f'{f}(新建)')
 
         pull = subprocess.run(
             ['git', 'pull', 'origin', 'main'],
@@ -851,6 +890,138 @@ def full_sync(operation: str = '未知操作') -> tuple[bool, str]:
                 messages.append('无需要同步的变更')
     
     return True, '；'.join(messages)
+
+# ==================== 简化方案：原子操作函数 ====================
+# 【简化方案】每个操作直接修改 Excel + 生成报表 + 推送 GitHub
+# 不再通过协作数据 JSON 中转，避免多源状态不同步的问题
+
+def _find_row_for_project_id(project_id: int):
+    """根据项目ID查找 Excel 中的行号（1-based），返回 (ws, row_num) 或 (None, None)"""
+    from openpyxl import load_workbook
+    if not os.path.exists(EXCEL_FILE):
+        return None, None
+    try:
+        wb = load_workbook(EXCEL_FILE)
+        ws = wb['任务计划表']
+        # ID = Excel 行号（idx = row_num - 1）
+        row_num = project_id + 1
+        if 1 <= row_num <= ws.max_row:
+            return wb, row_num
+        return None, None
+    except Exception:
+        return None, None
+
+def action_add_project(project_data: dict, operator: str = 'unknown') -> tuple[bool, str]:
+    """【简化方案】新增项目：直接写入 Excel + 生成报表 + 推送 GitHub"""
+    try:
+        from openpyxl import load_workbook
+        if not os.path.exists(EXCEL_FILE):
+            return False, 'Excel 文件不存在'
+        wb = load_workbook(EXCEL_FILE)
+        ws = wb['任务计划表']
+        last_row = ws.max_row + 1
+        new_id = last_row - 1  # ID = 行号 - 1
+        
+        # 写入各列（与 apply_collab_to_excel 中新增项目逻辑一致）
+        ws.cell(row=last_row, column=5, value=project_data.get('部门', ''))
+        ws.cell(row=last_row, column=6, value=project_data.get('项目', ''))
+        start_val = project_data.get('项目开始时间', '')
+        if start_val and start_val not in ['', '1900-01-01']:
+            ws.cell(row=last_row, column=7, value=start_val)
+        end_val = project_data.get('项目结束时间', '')
+        if end_val and end_val not in ['', '2100-01-01']:
+            ws.cell(row=last_row, column=8, value=end_val)
+        ws.cell(row=last_row, column=9, value=project_data.get('项目描述', ''))
+        ws.cell(row=last_row, column=10, value=project_data.get('资源类型', ''))
+        ws.cell(row=last_row, column=11, value=project_data.get('资源名称', ''))
+        res_start = project_data.get('资源开始时间', '')
+        if res_start and res_start not in ['', '1900-01-01']:
+            ws.cell(row=last_row, column=12, value=res_start)
+        res_end = project_data.get('资源结束时间', '')
+        if res_end and res_end not in ['', '2100-01-01']:
+            ws.cell(row=last_row, column=13, value=res_end)
+        ws.cell(row=last_row, column=14, value=project_data.get('日平均工时', 0) or 0)
+        if project_data.get('已归档'):
+            ws.cell(row=last_row, column=COL_ARCHIVED + 1, value='已归档')
+        
+        wb.save(EXCEL_FILE)
+        
+        # 生成报表 + 推送
+        r_ok, r_msg = regenerate_report()
+        p_ok, p_msg = git_push(f'{operator}新增项目: {project_data.get("项目", "")}')
+        return (r_ok and p_ok), f'新增成功(ID={new_id}); {r_msg}; {p_msg}'
+    except Exception as e:
+        return False, f'新增失败: {str(e)}'
+
+def action_delete_project(project_id: int, operator: str = 'unknown') -> tuple[bool, str]:
+    """【简化方案】删除项目：软删除（V列标记）+ 生成报表 + 推送 GitHub"""
+    wb, row_num = _find_row_for_project_id(project_id)
+    if wb is None:
+        return False, f'项目ID={project_id} 不存在'
+    try:
+        ws = wb['任务计划表']
+        _safe_write_cell(ws, row_num, COL_DELETED + 1, '已删除')
+        wb.save(EXCEL_FILE)
+        r_ok, r_msg = regenerate_report()
+        p_ok, p_msg = git_push(f'{operator}删除项目ID={project_id}')
+        return (r_ok and p_ok), f'删除成功; {r_msg}; {p_msg}'
+    except Exception as e:
+        return False, f'删除失败: {str(e)}'
+
+def action_archive_project(project_id: int, operator: str = 'unknown') -> tuple[bool, str]:
+    """【简化方案】归档项目：A列标记"已归档" + 生成报表 + 推送 GitHub"""
+    wb, row_num = _find_row_for_project_id(project_id)
+    if wb is None:
+        return False, f'项目ID={project_id} 不存在'
+    try:
+        ws = wb['任务计划表']
+        ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='已归档')
+        wb.save(EXCEL_FILE)
+        r_ok, r_msg = regenerate_report()
+        p_ok, p_msg = git_push(f'{operator}归档项目ID={project_id}')
+        return (r_ok and p_ok), f'归档成功; {r_msg}; {p_msg}'
+    except Exception as e:
+        return False, f'归档失败: {str(e)}'
+
+def action_unarchive_project(project_id: int, operator: str = 'unknown') -> tuple[bool, str]:
+    """【简化方案】取消归档：清空A列归档标志 + 生成报表 + 推送 GitHub"""
+    wb, row_num = _find_row_for_project_id(project_id)
+    if wb is None:
+        return False, f'项目ID={project_id} 不存在'
+    try:
+        ws = wb['任务计划表']
+        ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='')
+        wb.save(EXCEL_FILE)
+        r_ok, r_msg = regenerate_report()
+        p_ok, p_msg = git_push(f'{operator}取消归档项目ID={project_id}')
+        return (r_ok and p_ok), f'取消归档成功; {r_msg}; {p_msg}'
+    except Exception as e:
+        return False, f'取消归档失败: {str(e)}'
+
+def action_edit_project(project_id: int, edit_data: dict, operator: str = 'unknown') -> tuple[bool, str]:
+    """【简化方案】编辑项目：直接修改Excel单元格 + 生成报表 + 推送 GitHub"""
+    wb, row_num = _find_row_for_project_id(project_id)
+    if wb is None:
+        return False, f'项目ID={project_id} 不存在'
+    try:
+        ws = wb['任务计划表']
+        # 列映射：5=部门, 6=项目, 7=项目开始, 8=项目结束, 9=描述, 10=资源类型, 11=资源名称, 12=资源开始, 13=资源结束, 14=工时
+        col_map = {
+            '部门': 5, '项目': 6,
+            '项目开始时间': 7, '项目结束时间': 8,
+            '项目描述': 9, '资源类型': 10, '资源名称': 11,
+            '资源开始时间': 12, '资源结束时间': 13,
+            '日平均工时': 14
+        }
+        for field, value in edit_data.items():
+            if field in col_map:
+                _safe_write_cell(ws, row_num, col_map[field], value)
+        wb.save(EXCEL_FILE)
+        r_ok, r_msg = regenerate_report()
+        p_ok, p_msg = git_push(f'{operator}编辑项目ID={project_id}')
+        return (r_ok and p_ok), f'编辑成功; {r_msg}; {p_msg}'
+    except Exception as e:
+        return False, f'编辑失败: {str(e)}'
 
 def startup_sync() -> tuple[bool, str]:
     """服务器启动时同步：确保Git仓库 + 拉取最新 + 生成报表
