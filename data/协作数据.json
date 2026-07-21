@@ -2,13 +2,26 @@
   "localEdits": {},
   "notes": {},
   "checked": {},
-  "archived": {},
+  "archived": {
+    "74": {
+      "time": "2026-07-21T03:51:29.826Z",
+      "project": "TEST WEB"
+    },
+    "82": {
+      "time": "2026-07-21T06:21:42.344Z",
+      "project": "TEST WEB"
+    }
+  },
   "customEmails": {
     "刘璠": "fan.liu@hxgroup.com",
     "张丹": "dan.zhang@hxgroup.com",
     "戴于东": "yudong.dai@hxgroup.com"
   },
   "newProjects": [],
-  "deletedIds": [],
-  "lastUpdate": "2026-07-21T14:02:11.725538"
+  "deletedIds": [
+    81,
+    80,
+    79
+  ],
+  "lastUpdate": "1784642587525"
 }
