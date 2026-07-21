@@ -1120,6 +1120,15 @@ window.CURRENT_USER = {user_info};
             self.send_json({'lastUpdate': data.get('lastUpdate', '')})
             return
 
+        # --- API: 获取最新项目数据（需 view 权限）---
+        # 【关键修复】用于客户端同步后刷新 RAW_DATA，避免使用过时的归档/删除状态
+        if path == '/api/projects':
+            if not self.require_permission('view'):
+                return
+            projects = sync_excel.read_excel_projects()
+            self.send_json({'allProjects': projects})
+            return
+
         # --- API: 用户列表（需 user_manage 权限）---
         if path == '/api/users':
             if not self.require_permission('user_manage'):

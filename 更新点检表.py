@@ -1257,10 +1257,49 @@ let deletedIds = JSON.parse(localStorage.getItem('deletedIds') || '[]');
 let customEmails = JSON.parse(localStorage.getItem('customEmails') || '{}');
 let newProjects = JSON.parse(localStorage.getItem('newProjects') || '[]');
 
+// 【关键修复】从服务器获取最新项目数据（刷新 RAW_DATA）
+// 同步操作后必须调用此函数，否则客户端的 RAW_DATA 是过时的
+async function refreshRawData() {
+  if (!collabIsEnabled()) return false;
+  try {
+    const resp = await fetch('/api/projects');
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.allProjects) {
+        RAW_DATA.allProjects = data.allProjects;
+        // 重建部门索引
+        const depts = {};
+        data.allProjects.forEach(function(p) {
+          if (p['已归档']) return;  // 已归档的不计入活跃部门
+          const d = p['部门'] || '未分配';
+          if (!depts[d]) depts[d] = [];
+          depts[d].push(p);
+        });
+        RAW_DATA.depts = depts;
+        // 重新计算统计
+        const activeProjects = data.allProjects.filter(p => !p['已归档']);
+        RAW_DATA.stats = RAW_DATA.stats || {};
+        RAW_DATA.stats.total = activeProjects.length;
+        console.log('[同步] 已从服务器刷新 ' + data.allProjects.length + ' 个项目');
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('[同步] 刷新项目数据失败:', e);
+  }
+  return false;
+}
+
 // 【修复】从 RAW_DATA 同步 Excel 中的归档标志到 archived 对象（双向同步）
 // 后端写入Excel的归档/删除状态需要同步到前端，否则归档看板看不到、删除项目会恢复
-function syncFromExcel() {
+async function syncFromExcel() {
   if (typeof RAW_DATA === 'undefined' || !RAW_DATA.allProjects) return;
+  
+  // 【关键修复】协作模式下先从服务器获取最新数据，避免使用过时的 RAW_DATA
+  if (collabIsEnabled()) {
+    await refreshRawData();
+  }
+  
   let syncedCount = 0;
   let removedCount = 0;
   
@@ -1406,7 +1445,7 @@ async function collabLoadData() {
     // 【关键修复】从 RAW_DATA 同步 Excel 中的归档标志
     // 服务器端的 archived 在 full_sync 后会被清空（因为已写入Excel），
     // 所以必须以 Excel（RAW_DATA）中的归档状态为准
-    syncFromExcel();
+    await syncFromExcel();
 
     // 保存到本地
     localStorage.setItem('projectEdits', JSON.stringify(localEdits));
@@ -1446,6 +1485,9 @@ async function collabSyncToServer() {
       const result = await resp.json();
       collabLastUpdate = result.lastUpdate || collabLastUpdate;
       collabDirty = false;
+      // 【关键修复】同步成功后从服务器刷新 RAW_DATA
+      // 否则客户端的归档/删除状态是过时的，重置时会出错
+      await refreshRawData();
       // 同步成功后清空已提交的新增项目和删除ID
       // 注意：archived/localEdits/notes/checked 不清空，因为它们是前端展示状态
       // （后端已正确处理"取消归档"语义：前端没有的键意味着取消归档）
@@ -3166,40 +3208,40 @@ function saveData() {
   showSaved();
 }
 
-function resetAll() {
-  if (confirm('确定要清空所有本地修改（备注、点检、计划编辑、归档、新增项目）吗？\\n（不会影响原始Excel文件）')) {
-    // 1. 清空所有本地状态
+async function resetAll() {
+  if (confirm('确定要清空所有本地修改（备注、点检、计划编辑）吗？\\n（归档和已删除的项目不会受影响）')) {
+    // 1. 清空本地修改状态（【关键修复】保留 archived 和 deletedIds，
+    //    因为这些是已同步到Excel的持久化状态，不是"本地修改"）
     localEdits = {};
     notes = {};
     checked = {};
-    archived = {};
-    deletedIds = [];
+    // archived = {};  // ← 不再清空！归档是持久化状态
+    // deletedIds = [];  // ← 不再清空！删除是持久化状态
     newProjects = [];
     customEmails = {};
 
-    // 2. 从 localStorage 移除所有相关项
+    // 2. 从 localStorage 移除相关项（保留归档和删除状态）
     localStorage.removeItem('projectEdits');
     localStorage.removeItem('projectNotes');
     localStorage.removeItem('projectChecked');
-    localStorage.removeItem('projectArchived');
-    localStorage.removeItem('deletedIds');
+    // localStorage.removeItem('projectArchived');  // ← 保留
+    // localStorage.removeItem('deletedIds');  // ← 保留
     localStorage.removeItem('newProjects');
     localStorage.removeItem('customEmails');
 
-    // 3. 【关键修复】从 RAW_DATA 同步 Excel 中的归档标志
-    //    重置后，Excel中U列标记为"已归档"的项目仍然应该在归档看板中
-    syncFromExcel();
+    // 3. 【关键修复】从服务器获取最新数据并同步 Excel 中的归档标志
+    //    重置后，Excel中标记为"已归档"的项目仍然应该在归档看板中
+    await syncFromExcel();
 
     // 4. 协作模式：从服务器重新拉取数据（获取服务器端的协作状态）
     if (collabIsEnabled()) {
-      collabLoadData().then(function() {
-        // 服务器数据加载完成后，再次同步Excel归档状态（防止服务器覆盖）
-        syncFromExcel();
-        updateStats();
-        renderTable();
-        initHoursPanel();
-        initResourceSearch();
-      });
+      await collabLoadData();
+      // 服务器数据加载完成后，再次同步Excel归档状态（防止服务器覆盖）
+      await syncFromExcel();
+      updateStats();
+      renderTable();
+      initHoursPanel();
+      initResourceSearch();
     } else {
       // 非协作模式：直接刷新
       updateStats();
