@@ -2,9 +2,14 @@
   "localEdits": {},
   "notes": {},
   "checked": {},
-  "archived": {},
+  "archived": {
+    "83": {
+      "time": "2026-07-21T00:00:00Z",
+      "project": "测试项目C"
+    }
+  },
   "customEmails": {},
   "newProjects": [],
   "deletedIds": [],
-  "lastUpdate": "2026-07-21T05:18:15.730848"
+  "lastUpdate": "2026-07-21T05:18:36.861540"
 }
