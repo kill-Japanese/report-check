@@ -48,8 +48,8 @@
 [2026-07-21 02:37:30] USER_DELETE | 用户: admin | 删除用户: api_test_1470
 [2026-07-21 02:37:35] USER_DELETE | 用户: admin | 删除用户: e2e_test_1564
 [2026-07-21 02:37:50] PASSWORD_CHANGE | 用户: admin | 修改密码成功
-[2026-07-21 02:37:55] USER_DELETE | 用户: admin | 删除用户: e2e_test_1660
-[2026-07-21 02:38:00] USER_DELETE | 用户: admin | 删除用户: e2e_test_1749
-[2026-07-21 02:39:00] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 300 秒
-[2026-07-21 02:39:30] LOGIN | 用户: admin | 登录成功
-[2026-07-21 02:39:42] USER_DELETE | 用户: admin | 删除用户: persist_test_1243
+[2026-07-21 02:38:26] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 300 秒
+[2026-07-21 02:38:49] LOGIN | 用户: admin | 登录成功
+[2026-07-21 02:39:03] USER_DELETE | 用户: admin | 删除用户: test_1236
+[2026-07-21 02:39:45] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 300 秒
+[2026-07-21 02:39:56] LOGIN | 用户: admin | 登录成功
