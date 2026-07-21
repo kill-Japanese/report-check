@@ -43,3 +43,5 @@
 [2026-07-21 02:29:38] USER_CREATE | 用户: admin | 创建用户: test_1236, 角色: viewer
 [2026-07-21 02:30:36] USER_CREATE | 用户: admin | 创建用户: test_fix_1251, 角色: viewer
 [2026-07-21 02:30:44] USER_DELETE | 用户: admin | 删除用户: test_fix_1251
+[2026-07-21 02:36:12] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 300 秒
+[2026-07-21 02:37:08] LOGIN | 用户: admin | 登录成功
