@@ -1482,16 +1482,36 @@ window.CURRENT_USER = {user_info};
             if not self.require_permission('edit'):
                 return
             all_data = load_data()
-            # 【关键修复】archived 使用全量替换，不使用 .update()
-            # 原因：恢复归档时前端从 archived 中删除了键，.update() 无法感知"删除键"操作，
-            # 导致Excel U列的"已归档"永远不会被清除，重置时项目又回到归档栏
             for key in ['localEdits', 'notes', 'checked', 'customEmails']:
                 if key in data:
                     all_data[key].update(data[key])
-            # archived 全量替换：前端发送的是完整的待归档列表
-            # （前端没有的键 = 取消归档，必须从服务器端也删除）
+            # 【关键修复】archived 不再盲目全量替换，而是以 Excel 为准 + 合并客户端增量
+            # 原因：如果客户端的 archived 对象不完整（例如刚通过API归档后还没同步到本地），
+            # 全量替换会导致已归档项目的状态丢失，下次 full_sync 时 Excel 的归档标志被清空
             if 'archived' in data:
-                all_data['archived'] = data['archived']
+                # 1. 先从 Excel 读取当前真实的归档状态（最权威的数据源）
+                excel_projects = sync_excel.read_excel_projects()
+                excel_archived = {}
+                for p in excel_projects:
+                    if p.get('已归档'):
+                        excel_archived[str(p['id'])] = {
+                            'time': all_data.get('lastUpdate', ''),
+                            'project': p.get('项目', ''),
+                            'fromExcel': True
+                        }
+                # 2. 以 Excel 为基准，再合并客户端的增量（客户端的变更优先级更高）
+                merged_archived = dict(excel_archived)
+                client_archived = data['archived'] or {}
+                for pid, info in client_archived.items():
+                    if info:
+                        # 客户端明确标记为归档的，添加/更新
+                        merged_archived[str(pid)] = info
+                    elif str(pid) in merged_archived:
+                        # 客户端明确设置为空/false（表示取消归档），才删除
+                        # 注意：客户端"没有这个键"不等于取消归档，可能只是客户端数据不全
+                        del merged_archived[str(pid)]
+                all_data['archived'] = merged_archived
+                print(f'[sync] 归档状态合并: Excel基准={len(excel_archived)}个, 客户端增量={len(client_archived)}个, 合并后={len(merged_archived)}个')
             if 'newProjects' in data:
                 existing_ids = {p.get('id') for p in all_data['newProjects']}
                 for p in data['newProjects']:
@@ -1519,9 +1539,29 @@ window.CURRENT_USER = {user_info};
             if not self.require_permission('save'):
                 return
             all_data = load_data()
-            for key in ['localEdits', 'notes', 'checked', 'archived', 'customEmails', 'newProjects', 'deletedIds']:
+            for key in ['localEdits', 'notes', 'checked', 'customEmails', 'newProjects', 'deletedIds']:
                 if key in data:
                     all_data[key] = data[key]
+            # 【关键修复】archived 同样以 Excel 为准 + 合并客户端增量，防止归档状态丢失
+            if 'archived' in data:
+                excel_projects = sync_excel.read_excel_projects()
+                excel_archived = {}
+                for p in excel_projects:
+                    if p.get('已归档'):
+                        excel_archived[str(p['id'])] = {
+                            'time': all_data.get('lastUpdate', ''),
+                            'project': p.get('项目', ''),
+                            'fromExcel': True
+                        }
+                merged_archived = dict(excel_archived)
+                client_archived = data['archived'] or {}
+                for pid, info in client_archived.items():
+                    if info:
+                        merged_archived[str(pid)] = info
+                    elif str(pid) in merged_archived:
+                        del merged_archived[str(pid)]
+                all_data['archived'] = merged_archived
+                print(f'[save] 归档状态合并: Excel基准={len(excel_archived)}个, 客户端={len(client_archived)}个, 合并后={len(merged_archived)}个')
             user = self.get_current_user()
             auth._audit_log('DATA_SAVE', user['username'], '全量数据保存')
             save_data(all_data)

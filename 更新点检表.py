@@ -3306,6 +3306,11 @@ async function archiveProject(id) {
     if (collabIsEnabled()) {
       const result = await callActionApi('archive', { id: id });
       if (result && result.success) {
+        // 【关键修复】协作模式下也必须同步本地 archived 对象，
+        // 否则后续 collabSyncToServer() 会发送过时的 archived 数据，
+        // 后端全量替换后导致归档状态丢失
+        archived[id] = { time: new Date().toISOString(), project: name };
+        localStorage.setItem('projectArchived', JSON.stringify(archived));
         updateStats();
         renderTable();
         showSaved();
@@ -3326,6 +3331,10 @@ async function restoreProject(id) {
   if (collabIsEnabled()) {
     const result = await callActionApi('unarchive', { id: id });
     if (result && result.success) {
+      // 【关键修复】协作模式下也必须同步本地 archived 对象，
+      // 否则后续 collabSyncToServer() 会发送过时的 archived 数据
+      delete archived[id];
+      localStorage.setItem('projectArchived', JSON.stringify(archived));
       updateStats();
       renderTable();
       showSaved();
@@ -3351,6 +3360,23 @@ async function deleteProject(id) {
   if (collabIsEnabled()) {
     const result = await callActionApi('delete', { id: id });
     if (result && result.success) {
+      // 【关键修复】协作模式下也必须同步本地状态，
+      // 否则后续 collabSyncToServer() 会发送过时的状态数据
+      const idx = RAW_DATA.allProjects.findIndex(x => x.id === id);
+      if (idx !== -1) RAW_DATA.allProjects.splice(idx, 1);
+      Object.keys(RAW_DATA.depts).forEach(d => {
+        RAW_DATA.depts[d] = RAW_DATA.depts[d].filter(x => x.id !== id);
+      });
+      delete localEdits[id];
+      delete archived[id];
+      delete notes[`note_${id}`];
+      delete checked[id];
+      if (!deletedIds.includes(id)) deletedIds.push(id);
+      localStorage.setItem('projectEdits', JSON.stringify(localEdits));
+      localStorage.setItem('projectArchived', JSON.stringify(archived));
+      localStorage.setItem('projectNotes', JSON.stringify(notes));
+      localStorage.setItem('projectChecked', JSON.stringify(checked));
+      localStorage.setItem('deletedIds', JSON.stringify(deletedIds));
       updateStats();
       renderTable();
       initResourceSearch();
