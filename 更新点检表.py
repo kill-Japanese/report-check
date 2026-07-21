@@ -3192,7 +3192,7 @@ function saveNote(id, text) {
 async function callActionApi(endpoint, data) {
   if (!collabIsEnabled()) {
     alert('协作模式未启用，无法执行此操作');
-    return null;
+    return { success: false, message: '协作模式未启用' };
   }
   try {
     const resp = await fetch(`/api/action/${endpoint}`, {
@@ -3200,7 +3200,27 @@ async function callActionApi(endpoint, data) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
+    
+    // 先处理 HTTP 级别错误
+    if (!resp.ok) {
+      let errMsg = 'HTTP ' + resp.status;
+      try {
+        const errData = await resp.json();
+        if (errData.error) errMsg = errData.error;
+        if (errData.message) errMsg = errData.message;
+      } catch (_) {}
+      if (resp.status === 401) errMsg = '登录已过期，请重新登录';
+      if (resp.status === 403) errMsg = '权限不足，无法执行此操作';
+      return { success: false, message: errMsg };
+    }
+    
     const result = await resp.json();
+    
+    // 兼容旧格式：只有 error 字段的响应
+    if (result.error && result.success === undefined) {
+      return { success: false, message: result.error };
+    }
+    
     if (result.success && result.allProjects) {
       // 【关键】用服务器返回的最新数据替换 RAW_DATA
       RAW_DATA.allProjects = result.allProjects;
@@ -3221,8 +3241,7 @@ async function callActionApi(endpoint, data) {
     return result;
   } catch (e) {
     console.warn('[API] 调用失败:', e);
-    alert('操作失败：' + (e.message || '网络错误'));
-    return null;
+    return { success: false, message: '网络错误：' + (e.message || e) };
   }
 }
 
