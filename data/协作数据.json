@@ -1,8 +1,20 @@
 {
   "localEdits": {},
   "notes": {},
-  "checked": {},
-  "archived": {},
+  "checked": {
+    "84": true,
+    "85": true
+  },
+  "archived": {
+    "74": {
+      "time": "2026-07-21T03:51:29.826Z",
+      "project": "TEST WEB"
+    },
+    "82": {
+      "time": "2026-07-21T06:21:42.344Z",
+      "project": "TEST WEB"
+    }
+  },
   "customEmails": {
     "张丹": "dan.zhang@hxgroup.com",
     "刘璠": "fan.liu@hxgroup.com",
@@ -12,6 +24,10 @@
     "陆素萍": "suping.lu@hxgroup.com"
   },
   "newProjects": [],
-  "deletedIds": [],
-  "lastUpdate": "2026-07-21T10:18:56.345900"
+  "deletedIds": [
+    81,
+    80,
+    79
+  ],
+  "lastUpdate": "2026-07-21T10:19:05.607078"
 }
