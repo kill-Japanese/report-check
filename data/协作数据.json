@@ -13,7 +13,8 @@
     }
   },
   "customEmails": {
-    "刘璠": "fan.liu@hxgroup.com"
+    "刘璠": "fan.liu@hxgroup.com",
+    "张丹": "dan.zhang@hxgroup.com"
   },
   "newProjects": [],
   "deletedIds": [
@@ -21,5 +22,5 @@
     80,
     79
   ],
-  "lastUpdate": "2026-07-21T11:29:03.277205"
+  "lastUpdate": "2026-07-21T11:34:36.542993"
 }
