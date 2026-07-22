@@ -4622,6 +4622,12 @@ async function parseImportData() {
   }
 }
 
+function showConfirmDialog(title, htmlMessage) {
+  // 将HTML转换为纯文本（<br>→换行）用于原生confirm
+  const plainText = htmlMessage.replace(/<br>/g, '\n').replace(/<[^>]+>/g, '');
+  return confirm(`⚠️ ${title}\n\n${plainText}\n\n点击"确定"继续，点击"取消"停止。`);
+}
+
 function handleParseResult(result) {
   console.log('[导入] handleParseResult:', result);
   if (!result || result.success === false) {
@@ -4649,15 +4655,30 @@ function handleParseResult(result) {
   if (result.warnings) {
     warnings.push(...result.warnings);
   }
-  // 检查TR标识缺失
-  const missingTR = importParsedData.filter(r => !r['项目描述'] || !r['项目描述'].includes('TR')).length;
-  if (missingTR > 0) {
-    warnings.push(`⚠️ 有 ${missingTR} 条数据缺少TR标识（项目描述中不包含TR）`);
+  
+  // === STEP 4: 检查TR标识（按SKILL.MD） ===
+  const unresolvedTR = result.unresolved_tr || [];
+  if (unresolvedTR.length > 0) {
+    const trList = unresolvedTR.map((r, i) => `${i+1}. ${r}`).join('<br>');
+    const msg = `⚠️ 有 ${unresolvedTR.length} 条资源上级找不到 TR 标识：<br><br>${trList}<br><br>是否继续生成？`;
+    // 自定义确认框
+    if (!showConfirmDialog('部分资源缺少TR标识', msg)) {
+      warningsEl.innerHTML = '<div style="color:#ef4444">❌ 已取消：资源缺少TR标识，请确认数据后重试</div>';
+      warningsEl.style.display = 'block';
+      return;
+    }
   }
-  // 检查project标识缺失
-  const missingProject = importParsedData.filter(r => !r['项目']).length;
-  if (missingProject > 0) {
-    warnings.push(`⚠️ 有 ${missingProject} 条数据缺少项目名称`);
+  
+  // === STEP 5: 检查project标识（按SKILL.MD） ===
+  const unresolvedProject = result.unresolved_project || [];
+  if (unresolvedProject.length > 0) {
+    const projList = unresolvedProject.map((r, i) => `${i+1}. ${r}`).join('<br>');
+    const msg = `⚠️ 有 ${unresolvedProject.length} 条资源上级找不到 project 标识：<br><br>${projList}<br><br>是否继续生成？`;
+    if (!showConfirmDialog('部分资源缺少project标识', msg)) {
+      warningsEl.innerHTML = '<div style="color:#ef4444">❌ 已取消：资源缺少project标识，请确认数据后重试</div>';
+      warningsEl.style.display = 'block';
+      return;
+    }
   }
   
   if (warnings.length > 0) {
