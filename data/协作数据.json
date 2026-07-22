@@ -2,7 +2,13 @@
   "localEdits": {},
   "notes": {},
   "checked": {},
-  "archived": {},
+  "archived": {
+    "87": {
+      "time": "2026-07-22T07:17:47.165Z",
+      "project": "TEST WEB",
+      "fromExcel": true
+    }
+  },
   "customEmails": {
     "刘璠": "fan.liu@hxgroup.com",
     "张丹": "dan.zhang@hxgroup.com",
@@ -13,5 +19,5 @@
   },
   "newProjects": [],
   "deletedIds": [],
-  "lastUpdate": "2026-07-21T14:26:23.194907"
+  "lastUpdate": "1784706012018"
 }
