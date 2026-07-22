@@ -1551,7 +1551,24 @@ window.CURRENT_USER = {user_info};
                 result = {'success': False, 'error': f'不支持的解析类型: {parse_type}'}
 
             auth._audit_log('IMPORT_PARSE', user['username'], f'type={parse_type}, filename={filename[:50]}')
-            self.send_json(result)
+            
+            # 统一返回格式：将 resources 转为 rows，并处理错误
+            if not result.get('success'):
+                response = {
+                    'success': False,
+                    'error': result.get('error', '解析失败'),
+                    'rows': []
+                }
+            else:
+                resources = result.get('resources', [])
+                response = {
+                    'success': True,
+                    'rows': resources,
+                    'warnings': result.get('warnings', []),
+                    'unresolved_tr': result.get('unresolved_tr', []),
+                    'unresolved_project': result.get('unresolved_project', [])
+                }
+            self.send_json(response)
             return
 
         # --- 批量提交导入（需 edit 权限）---

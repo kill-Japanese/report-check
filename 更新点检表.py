@@ -4574,19 +4574,31 @@ async function parseImportData() {
       const fileInput = document.getElementById('importPdfFile');
       if (!fileInput.files || fileInput.files.length === 0) { alert('请选择PDF文件'); return; }
       const file = fileInput.files[0];
+      console.log('[PDF导入] 选择文件:', file.name, '大小:', file.size, '字节');
       // 读取文件为base64
       const reader = new FileReader();
       reader.onload = async function(e) {
-        const base64 = e.target.result.split(',')[1];  // 去掉data:application/pdf;base64,前缀
-        const payload = { type: 'pdf', text: base64, filename: file.name };
-        const resp = await fetch('/api/import/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (!resp.ok) throw new Error('解析失败: ' + resp.status);
-        const result = await resp.json();
-        handleParseResult(result);
+        try {
+          const base64 = e.target.result.split(',')[1];  // 去掉data:application/pdf;base64,前缀
+          console.log('[PDF导入] base64长度:', base64.length);
+          const payload = { type: 'pdf', text: base64, filename: file.name };
+          const resp = await fetch('/api/import/parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!resp.ok) throw new Error('解析失败: ' + resp.status);
+          const result = await resp.json();
+          console.log('[PDF导入] 解析结果:', result);
+          handleParseResult(result);
+        } catch (err) {
+          console.error('[PDF导入] 错误:', err);
+          alert('❌ 解析失败：' + (err.message || err));
+        }
+      };
+      reader.onerror = function(e) {
+        console.error('[PDF导入] 文件读取错误:', e);
+        alert('❌ 文件读取失败');
       };
       reader.readAsDataURL(file);
       return;
@@ -4611,7 +4623,12 @@ async function parseImportData() {
 }
 
 function handleParseResult(result) {
-  if (!result || !result.rows || result.rows.length === 0) {
+  console.log('[导入] handleParseResult:', result);
+  if (!result || result.success === false) {
+    alert('解析失败：' + (result?.error || '未知错误'));
+    return;
+  }
+  if (!result.rows || result.rows.length === 0) {
     alert('未解析到任何数据，请检查输入内容');
     return;
   }
