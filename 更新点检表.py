@@ -4622,12 +4622,6 @@ async function parseImportData() {
   }
 }
 
-function showConfirmDialog(title, htmlMessage) {
-  // 将HTML转换为纯文本（<br>→换行）用于原生confirm
-  const plainText = htmlMessage.replace(/<br>/g, '\n').replace(/<[^>]+>/g, '');
-  return confirm(`⚠️ ${title}\n\n${plainText}\n\n点击"确定"继续，点击"取消"停止。`);
-}
-
 function handleParseResult(result) {
   console.log('[导入] handleParseResult:', result);
   if (!result || result.success === false) {
@@ -4659,10 +4653,9 @@ function handleParseResult(result) {
   // === STEP 4: 检查TR标识（按SKILL.MD） ===
   const unresolvedTR = result.unresolved_tr || [];
   if (unresolvedTR.length > 0) {
-    const trList = unresolvedTR.map((r, i) => `${i+1}. ${r}`).join('<br>');
-    const msg = `⚠️ 有 ${unresolvedTR.length} 条资源上级找不到 TR 标识：<br><br>${trList}<br><br>是否继续生成？`;
-    // 自定义确认框
-    if (!showConfirmDialog('部分资源缺少TR标识', msg)) {
+    const trList = unresolvedTR.map((r, i) => `${i+1}. ${r}`).join('\\n');
+    const msg = '⚠️ 有 ' + unresolvedTR.length + ' 条资源上级找不到 TR 标识：\\n\\n' + trList + '\\n\\n点击"确定"继续，点击"取消"停止。';
+    if (!confirm(msg)) {
       warningsEl.innerHTML = '<div style="color:#ef4444">❌ 已取消：资源缺少TR标识，请确认数据后重试</div>';
       warningsEl.style.display = 'block';
       return;
@@ -4672,9 +4665,9 @@ function handleParseResult(result) {
   // === STEP 5: 检查project标识（按SKILL.MD） ===
   const unresolvedProject = result.unresolved_project || [];
   if (unresolvedProject.length > 0) {
-    const projList = unresolvedProject.map((r, i) => `${i+1}. ${r}`).join('<br>');
-    const msg = `⚠️ 有 ${unresolvedProject.length} 条资源上级找不到 project 标识：<br><br>${projList}<br><br>是否继续生成？`;
-    if (!showConfirmDialog('部分资源缺少project标识', msg)) {
+    const projList = unresolvedProject.map((r, i) => `${i+1}. ${r}`).join('\\n');
+    const msg = '⚠️ 有 ' + unresolvedProject.length + ' 条资源上级找不到 project 标识：\\n\\n' + projList + '\\n\\n点击"确定"继续，点击"取消"停止。';
+    if (!confirm(msg)) {
       warningsEl.innerHTML = '<div style="color:#ef4444">❌ 已取消：资源缺少project标识，请确认数据后重试</div>';
       warningsEl.style.display = 'block';
       return;
