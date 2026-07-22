@@ -1078,6 +1078,88 @@ def _find_row_for_project_id(project_id: int):
     except Exception:
         return None, None
 
+# ==================== 新增项目辅助函数 ====================
+
+def _normalize_date(val, is_start=True):
+    """日期标准化：空值/哨兵值统一处理
+    - 开始日期: 空/'/' → '1900-01-01'
+    - 结束日期: 空 → '2100-01-01'
+    - 其他有效日期: 直接返回
+    """
+    if is_start:
+        if not val or str(val).strip() == '' or str(val).strip() == '/':
+            return '1900-01-01'
+        return str(val).strip()
+    else:
+        if not val or str(val).strip() == '':
+            return '2100-01-01'
+        return str(val).strip()
+
+def _copy_formulas(ws, source_row, target_row):
+    """将 source_row 的 O-W 列(15-23)公式复制到 target_row，替换相对引用行号
+    - 绝对引用($A$2, C$2 保持不变
+    - 相对引用(K4, L4 等替换为 target_row
+    """
+    import re
+    for col in range(15, 24):  # O(15) 到 W(23)
+        source_val = ws.cell(row=source_row, column=col).value
+        if source_val and isinstance(source_val, str) and source_val.startswith('='):
+            # 只替换相对引用的行号: 字母+source_row且不是$source_row
+            # 即: 前面没有$的字母后接source_row
+            new_val = re.sub(
+                r'(?<!\$)([A-Z])' + str(source_row) + r'\b',
+                r'\g<1>' + str(target_row),
+                source_val
+            )
+            ws.cell(row=target_row, column=col, value=new_val)
+
+def _format_resource_name(name, ws=None):
+    """3层查找: 纯姓名 → Excel格式 " @姓名(工号)(姓名)"
+    第1层: 在 getAllEmails()/现有人员列表中查找
+    第2层: 在 Excel 已有 K 列中模糊匹配姓名
+    第3层: 使用简化格式 " @姓名"
+    """
+    if not name:
+        return ''
+    name = str(name).strip()
+    if name.startswith(' @'):  # 已经是Excel格式，直接返回
+        return name
+    
+    # 第1层: 从 getAllEmails 查找
+    try:
+        emails = getAllEmails()
+        for email_info in emails:
+            display = email_info.get('display', '')
+            # display 可能是 "项家祺(80004213)" 或 "项家祺"
+            if name in display:
+                # 提取工号
+                import re
+                m = re.search(r'\((\d+)\)', display)
+                emp_id = m.group(1) if m else ''
+                if emp_id:
+                    return f' @{name}({emp_id})({name})'
+                else:
+                    return f' @{name}'
+    except Exception:
+        pass
+    
+    # 第2层: 在 Excel K 列中模糊匹配
+    if ws is not None:
+        try:
+            found_formats = set()
+            for row in range(4, ws.max_row + 1):
+                val = ws.cell(row=row, column=11).value
+                if val and name in str(val):
+                    found_formats.add(str(val).strip())
+            if found_formats:
+                # 返回最长的那个（通常信息最全）
+                return max(found_formats, key=len)
+        except Exception:
+            pass
+    
+    # 第3层: 简化格式
+    return f' @{name}'
+
 def action_add_project(project_data: dict, operator: str = 'unknown') -> tuple[bool, str]:
     """【简化方案】新增项目：直接写入 Excel + 生成报表 + 推送 GitHub
     
@@ -1096,24 +1178,22 @@ def action_add_project(project_data: dict, operator: str = 'unknown') -> tuple[b
         # 写入各列（与 apply_collab_to_excel 中新增项目逻辑一致）
         ws.cell(row=last_row, column=5, value=project_data.get('部门', ''))
         ws.cell(row=last_row, column=6, value=project_data.get('项目', ''))
-        start_val = project_data.get('项目开始时间', '')
-        if start_val and start_val not in ['', '1900-01-01']:
-            ws.cell(row=last_row, column=7, value=start_val)
-        end_val = project_data.get('项目结束时间', '')
-        if end_val and end_val not in ['', '2100-01-01']:
-            ws.cell(row=last_row, column=8, value=end_val)
+        # 【修复】日期标准化：空/哨兵值统一处理，直接写入（与读取端对称）
+        ws.cell(row=last_row, column=7, value=_normalize_date(project_data.get('项目开始时间', ''), is_start=True))
+        ws.cell(row=last_row, column=8, value=_normalize_date(project_data.get('项目结束时间', ''), is_start=False))
         ws.cell(row=last_row, column=9, value=project_data.get('项目描述', ''))
         ws.cell(row=last_row, column=10, value=project_data.get('资源类型', ''))
-        ws.cell(row=last_row, column=11, value=project_data.get('资源名称', ''))
-        res_start = project_data.get('资源开始时间', '')
-        if res_start and res_start not in ['', '1900-01-01']:
-            ws.cell(row=last_row, column=12, value=res_start)
-        res_end = project_data.get('资源结束时间', '')
-        if res_end and res_end not in ['', '2100-01-01']:
-            ws.cell(row=last_row, column=13, value=res_end)
+        # 【修复】资源名称格式转换：纯姓名 → Excel格式
+        ws.cell(row=last_row, column=11, value=_format_resource_name(project_data.get('资源名称', ''), ws))
+        ws.cell(row=last_row, column=12, value=_normalize_date(project_data.get('资源开始时间', ''), is_start=True))
+        ws.cell(row=last_row, column=13, value=_normalize_date(project_data.get('资源结束时间', ''), is_start=False))
         ws.cell(row=last_row, column=14, value=project_data.get('日平均工时', 0) or 0)
         if project_data.get('已归档'):
             ws.cell(row=last_row, column=COL_ARCHIVED + 1, value='已归档')
+        
+        # 【修复】复制 O-W 列公式（从第4行复制，第4行是有完整公式的参考行）
+        ref_row = 4 if last_row > 4 else last_row - 1 if last_row > 1 else 4
+        _copy_formulas(ws, ref_row, last_row)
         
         wb.save(EXCEL_FILE)
         invalidate_projects_cache()
@@ -1128,6 +1208,143 @@ def action_add_project(project_data: dict, operator: str = 'unknown') -> tuple[b
         return True, '; '.join(messages)
     except Exception as e:
         return False, f'新增失败: {str(e)}'
+
+def action_add_project_batch(projects_data: list, operator: str = 'unknown') -> dict:
+    """批量新增项目：一次打开Excel，写入所有行，复制公式，保存一次
+    
+    Args:
+        projects_data: 项目数据列表，每条格式同 action_add_project
+        operator: 操作人
+    
+    Returns:
+        dict: {
+            'success': bool,
+            'total': int,
+            'added': int,
+            'skipped': int,
+            'errors': [str],
+            'ids': [int],
+            'message': str
+        }
+    """
+    MAX_BATCH = 50
+    result = {
+        'success': False,
+        'total': len(projects_data),
+        'added': 0,
+        'skipped': 0,
+        'errors': [],
+        'ids': [],
+        'message': ''
+    }
+    
+    if not projects_data:
+        result['message'] = '没有数据需要导入'
+        return result
+    
+    # 50条限制
+    if len(projects_data) > MAX_BATCH:
+        result['errors'].append(f'超过{MAX_BATCH}条限制，仅处理前{MAX_BATCH}条')
+        projects_data = projects_data[:MAX_BATCH]
+        result['total'] = MAX_BATCH
+    
+    try:
+        from openpyxl import load_workbook
+        if not os.path.exists(EXCEL_FILE):
+            result['message'] = 'Excel 文件不存在'
+            return result
+        
+        wb = load_workbook(EXCEL_FILE)
+        ws = wb['任务计划表']
+        ref_row = 4  # 公式参考行
+        
+        for idx, project_data in enumerate(projects_data):
+            try:
+                # ========== 写入前校验（7道关卡） ==========
+                skip_reason = None
+                
+                # 1. 资源名称非空
+                res_name = str(project_data.get('资源名称', '')).strip()
+                if not res_name:
+                    skip_reason = '资源名称为空'
+                
+                # 2. 资源结束时间非空
+                res_end = str(project_data.get('资源结束时间', '')).strip()
+                if not skip_reason and not res_end:
+                    skip_reason = '资源结束时间为空'
+                
+                # 3. 日平均工时 0-24
+                try:
+                    daily_hours = float(project_data.get('日平均工时', 0) or 0)
+                    daily_hours = max(0, min(24, daily_hours))  # 截断到0-24
+                except (ValueError, TypeError):
+                    daily_hours = 0
+                
+                # 4. 日期格式校验 & 5. 结束 ≥ 开始
+                try:
+                    proj_start = _normalize_date(project_data.get('项目开始时间', ''), True)
+                    proj_end = _normalize_date(project_data.get('项目结束时间', ''), False)
+                    res_start = _normalize_date(project_data.get('资源开始时间', ''), True)
+                    res_end_norm = _normalize_date(res_end, False)
+                    
+                    # 简单日期比较（YYYY-MM-DD字符串比较即可）
+                    if res_end_norm < res_start and res_start != '1900-01-01':
+                        skip_reason = f'结束时间({res_end_norm})早于开始时间({res_start})'
+                except Exception as e:
+                    skip_reason = f'日期格式错误: {e}'
+                
+                if skip_reason:
+                    result['skipped'] += 1
+                    result['errors'].append(f'第{idx+1}条跳过: {skip_reason}')
+                    continue
+                
+                # ========== 写入 ==========
+                last_row = ws.max_row + 1
+                new_id = last_row - 1
+                
+                ws.cell(row=last_row, column=5, value=project_data.get('部门', ''))
+                ws.cell(row=last_row, column=6, value=project_data.get('项目', ''))
+                ws.cell(row=last_row, column=7, value=proj_start)
+                ws.cell(row=last_row, column=8, value=proj_end)
+                ws.cell(row=last_row, column=9, value=project_data.get('项目描述', ''))
+                ws.cell(row=last_row, column=10, value=project_data.get('资源类型', ''))
+                ws.cell(row=last_row, column=11, value=_format_resource_name(res_name, ws))
+                ws.cell(row=last_row, column=12, value=res_start)
+                ws.cell(row=last_row, column=13, value=res_end_norm)
+                ws.cell(row=last_row, column=14, value=daily_hours)
+                if project_data.get('已归档'):
+                    ws.cell(row=last_row, column=COL_ARCHIVED + 1, value='已归档')
+                
+                # 复制公式
+                _copy_formulas(ws, ref_row, last_row)
+                
+                result['added'] += 1
+                result['ids'].append(new_id)
+                
+            except Exception as e:
+                result['skipped'] += 1
+                result['errors'].append(f'第{idx+1}条异常: {str(e)}')
+                continue
+        
+        # 一次保存
+        wb.save(EXCEL_FILE)
+        invalidate_projects_cache()
+        
+        result['success'] = True
+        result['message'] = f'批量导入完成: 成功{result["added"]}条，跳过{result["skipped"]}条（共{result["total"]}条）'
+        
+        # 后台报表+推送
+        commit_msg = f'{operator}批量导入{result["added"]}个项目'
+        thread = threading.Thread(target=_background_report_and_push, args=(commit_msg,), daemon=True)
+        thread.start()
+        result['message'] += '（报表和同步正在后台执行）'
+        
+        return result
+        
+    except Exception as e:
+        result['message'] = f'批量导入失败: {str(e)}'
+        result['errors'].append(str(e))
+        return result
 
 def _background_report_and_push(commit_msg: str):
     """【后台线程】生成报表 + 推送 GitHub（并行执行，总耗时 = max(报表, push) 而非 sum）

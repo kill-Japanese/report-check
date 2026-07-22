@@ -28,6 +28,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import auth
 import sync_excel
+import project_parser
 
 # ==================== 配置 ====================
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
@@ -1188,6 +1189,13 @@ window.CURRENT_USER = {user_info};
             self.send_json(auth.get_audit_log(200))
             return
 
+        # --- API: 导入功能检测（需 view 权限）---
+        if path == '/api/import/features':
+            if not self.require_permission('view'):
+                return
+            self.send_json(project_parser.get_available_features())
+            return
+
         # 其他静态文件
         super().do_GET()
 
@@ -1486,6 +1494,56 @@ window.CURRENT_USER = {user_info};
             ok, msg = sync_excel.action_edit_project(pid, edit_data, user['username'])
             auth._audit_log('PROJECT_EDIT', user['username'], f'ID={pid}: {msg[:80]}')
             self.send_json({'success': ok, 'message': msg})
+            return
+
+        # --- 解析导入（需 edit 权限）---
+        if path == '/api/import/parse':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            parse_type = data.get('type', 'text')
+            text = data.get('text', '')
+            filename = data.get('filename', '')
+
+            if parse_type == 'text':
+                result = project_parser.parse_text(text)
+            elif parse_type == 'mpp':
+                import tempfile
+                import base64
+                tmp_dir = tempfile.gettempdir()
+                safe_name = os.path.basename(filename) if filename else f'import_{int(time.time())}.mpp'
+                tmp_path = os.path.join(tmp_dir, safe_name)
+                try:
+                    file_data = base64.b64decode(text) if text else b''
+                    with open(tmp_path, 'wb') as f:
+                        f.write(file_data)
+                    result = project_parser.parse_mpp(tmp_path)
+                except Exception as e:
+                    result = {'success': False, 'error': f'MPP文件处理失败: {str(e)}'}
+                finally:
+                    if os.path.exists(tmp_path):
+                        try:
+                            os.remove(tmp_path)
+                        except:
+                            pass
+            elif parse_type == 'image':
+                result = {'success': False, 'error': 'OCR功能暂不可用'}
+            else:
+                result = {'success': False, 'error': f'不支持的解析类型: {parse_type}'}
+
+            auth._audit_log('IMPORT_PARSE', user['username'], f'type={parse_type}, filename={filename[:50]}')
+            self.send_json(result)
+            return
+
+        # --- 批量提交导入（需 edit 权限）---
+        if path == '/api/import/commit':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            projects = data.get('projects', [])
+            result = sync_excel.action_add_project_batch(projects, operator=user['username'])
+            auth._audit_log('IMPORT_COMMIT', user['username'], f'批量导入 {len(projects)} 条')
+            self.send_json(result)
             return
 
         # --- 数据同步（需 edit 权限）---
