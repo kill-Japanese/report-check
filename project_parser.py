@@ -553,14 +553,17 @@ def parse_pdf(pdf_path):
     
     try:
         all_tasks = []
+        debug_info = []
         
         with pdfplumber.open(pdf_path) as pdf:
+            debug_info.append(f'PDF共{len(pdf.pages)}页')
             for page_idx, page in enumerate(pdf.pages):
                 tables = page.extract_tables()
                 if not tables:
                     continue
                 
-                for table in tables:
+                debug_info.append(f'第{page_idx+1}页: {len(tables)}个表格')
+                for t_idx, table in enumerate(tables):
                     if len(table) < 2:
                         continue
                     
@@ -570,6 +573,8 @@ def parse_pdf(pdf_path):
                     
                     if not is_task_table:
                         continue
+                    
+                    debug_info.append(f'  表格{t_idx+1}: 识别为任务表，共{len(table)}行, 表头={first_row[:5]}')
                     
                     # 找到列索引
                     col_idx = {}
@@ -592,8 +597,11 @@ def parse_pdf(pdf_path):
                         elif '工时' in h_clean:
                             col_idx['work'] = i
                     
+                    debug_info.append(f'  列映射: {col_idx}')
+                    
                     # 必须有 id 和 name 列
                     if 'id' not in col_idx or 'name' not in col_idx:
+                        debug_info.append(f'  ⚠ 缺少id或name列，跳过')
                         continue
                     
                     # 解析数据行
@@ -690,11 +698,14 @@ def parse_pdf(pdf_path):
                             'work': work,
                         })
         
+        debug_info.append(f'✅ PDF提取任务数: {len(all_tasks)}')
+        
         if not all_tasks:
             return {
                 'success': False,
                 'error': 'PDF中未找到有效的任务表格，请确认是Microsoft Project导出的PDF',
-                'resources': []
+                'resources': [],
+                'warnings': debug_info
             }
         
         # 按ID排序
@@ -727,13 +738,24 @@ def parse_pdf(pdf_path):
             padded_name = ' ' * indent + t['name']
             lines.append(f"{padded_name}\t{t['start'] or ''}\t{t['end'] or ''}\t{t['work']}h\t{t['owner']}")
         
-        return parse_text('\n'.join(lines))
+        text_content = '\n'.join(lines)
+        debug_info.append(f'构造文本共{len(lines)}行, 前5行预览:')
+        for l in lines[:5]:
+            debug_info.append(f'  {l[:80]}')
+        
+        result = parse_text(text_content)
+        # 把PDF调试信息合并到结果中
+        if 'warnings' not in result:
+            result['warnings'] = []
+        result['warnings'] = debug_info + result['warnings']
+        return result
         
     except Exception as e:
         return {
             'success': False,
             'error': f'PDF解析失败: {str(e)}',
-            'resources': []
+            'resources': [],
+            'warnings': debug_info if 'debug_info' in dir() else [str(e)]
         }
 
 # ============================================================
