@@ -558,10 +558,10 @@ def parse_pdf(pdf_path):
         with pdfplumber.open(pdf_path) as pdf:
             debug_info.append(f'PDF共{len(pdf.pages)}页')
             for page_idx, page in enumerate(pdf.pages):
-                # 尝试多种表格提取策略，取列数最多的结果
+                # 尝试多种表格提取策略
                 all_tables_attempts = []
                 
-                # 策略1: 默认（竖线检测）
+                # 策略1: 默认（竖线检测）- 优先
                 try:
                     t1 = page.extract_tables()
                     all_tables_attempts.append(('默认', t1))
@@ -573,7 +573,7 @@ def parse_pdf(pdf_path):
                     t2 = page.extract_tables(table_settings={
                         'vertical_strategy': 'text',
                         'horizontal_strategy': 'text',
-                        'snap_tolerance': 3,
+                        'snap_tolerance': 5,
                     })
                     all_tables_attempts.append(('文本位置', t2))
                 except:
@@ -590,20 +590,28 @@ def parse_pdf(pdf_path):
                 except:
                     pass
                 
-                # 选列数最多的策略结果
+                # 选最优策略：优先选能识别出任务表且列数在合理范围(8-20)的
                 best_tables = []
                 best_strategy = ''
-                max_cols = 0
+                best_score = -1
                 for strategy, tables in all_tables_attempts:
-                    if tables:
-                        for table in tables:
-                            if len(table) > 0 and len(table[0]) > max_cols:
-                                max_cols = len(table[0])
-                                best_tables = tables
-                                best_strategy = strategy
+                    if not tables:
+                        continue
+                    for table in tables:
+                        if len(table) < 2:
+                            continue
+                        first_row = [str(c).replace('\n', ' ').strip() if c else '' for c in table[0]]
+                        is_task = any('标识号' in c or '任务名称' in c for c in first_row)
+                        n_cols = len(first_row)
+                        # 评分: 是任务表+100分, 列数在8-15之间额外加分
+                        score = (100 if is_task else 0) + (10 if 8 <= n_cols <= 18 else 0) - abs(n_cols - 11)
+                        if score > best_score:
+                            best_score = score
+                            best_tables = tables
+                            best_strategy = strategy
                 
                 tables = best_tables if best_tables else page.extract_tables()
-                debug_info.append(f'第{page_idx+1}页: 策略={best_strategy or "默认"}, {len(tables)}个表格, 最多{max_cols}列')
+                debug_info.append(f'第{page_idx+1}页: 策略={best_strategy or "默认"}, {len(tables)}个表格')
                 
                 if not tables:
                     continue
@@ -650,26 +658,165 @@ def parse_pdf(pdf_path):
                     
                     # 解析数据行
                     for row in table[1:]:
-                        def get_cell(idx):
+                        def _clean_lines(raw_val, col_type='name'):
+                            """清理单元格（处理甘特图标签混入的垃圾数据）
+                            col_type: name(任务名称), date(日期), work(工时), owner(责任人), other
+                            """
+                            if raw_val is None:
+                                return ''
+                            s = str(raw_val)
+                            if not s.strip():
+                                return ''
+                            
+                            # 把换行符当作空格处理（统一处理所有行的混合内容）
+                            s_normalized = re.sub(r'\n+', ' ', s).strip()
+                            
+                            if col_type == 'date':
+                                # 日期：提取并修复（处理污染的年份和年月之间的垃圾字符）
+                                def _extract_date(s):
+                                    if not s:
+                                        return None
+                                    s = re.sub(r'\n+', ' ', s)
+                                    
+                                    # 方法1: 找 "月D日" 模式，然后往前找年份
+                                    # 同时处理年月之间有垃圾字符的情况（如2026年CCC7月23日）
+                                    m = re.search(r'(\d{1,2})\s*月\s*(\d{1,2})\s*日', s)
+                                    if m:
+                                        month, day = m.group(1), m.group(2)
+                                        # 从月份位置往前，找"年"字，再往前找数字
+                                        pre = s[:m.start(1)]
+                                        year_m = re.search(r'(\d+)\s*年\s*$', pre)
+                                        if year_m:
+                                            y = year_m.group(1)
+                                            # 年份修正
+                                            if len(y) > 4 or int(y) > 2100:
+                                                y = '20' + y[-2:]
+                                            elif len(y) == 3:
+                                                y = '20' + y[-2:]
+                                            elif len(y) <= 2:
+                                                y = '20' + y.zfill(2)
+                                            return f'{y}年{month}月{day}日'
+                                        # 没找到年字，往前找最近的数字串
+                                        digits = re.findall(r'(\d+)', pre)
+                                        if digits:
+                                            y = digits[-1][-4:]
+                                            if len(y) > 4 or (len(y) == 4 and int(y) > 2100):
+                                                y = '20' + y[-2:]
+                                            elif len(y) <= 2:
+                                                y = '20' + y.zfill(2)
+                                            return f'{y}年{month}月{day}日'
+                                    
+                                    # 方法2: 标准格式
+                                    m = re.search(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})', s)
+                                    if m:
+                                        return f'{m.group(1)}-{m.group(2)}-{m.group(3)}'
+                                    return None
+                                
+                                extracted = _extract_date(s_normalized)
+                                if extracted:
+                                    return extracted
+                                return s_normalized
+                            
+                            elif col_type == 'work':
+                                # 工时：优先取换行后第一行的第一个合理数字
+                                # 因为换行前通常是甘特图标签（如222\n6 44 → 6是工时，44是标签）
+                                if '\n' in s:
+                                    lines = [l.strip() for l in s.split('\n') if l.strip()]
+                                    # 从最后一行（通常是真实数据行）往前找
+                                    for l in reversed(lines):
+                                        nums = re.findall(r'([\d.]+)', l)
+                                        for n in nums:
+                                            try:
+                                                val = float(n)
+                                                if 0 <= val <= 200:
+                                                    return n
+                                            except:
+                                                pass
+                                # 没换行的情况，找所有合理数字
+                                nums = re.findall(r'([\d.]+)', s_normalized)
+                                for n in nums:
+                                    try:
+                                        val = float(n)
+                                        if 0 <= val <= 200:
+                                            return n
+                                    except:
+                                        pass
+                                if nums:
+                                    return nums[-1]
+                                return ''
+                            
+                            elif col_type == 'owner':
+                                # 责任人：优先从已知人名列表提取（支持模糊匹配）
+                                known_names = ['陈雷雷', '毛文豪', '袁知正', '文春英', '肖庆杨']
+                                # 精确子串匹配
+                                for n in known_names:
+                                    if n in s_normalized:
+                                        return n
+                                # 按字序模糊匹配
+                                for n in known_names:
+                                    idx = 0
+                                    match = True
+                                    for ch in n:
+                                        pos = s_normalized.find(ch, idx)
+                                        if pos == -1:
+                                            match = False
+                                            break
+                                        idx = pos + 1
+                                    if match:
+                                        return n
+                                # 没有已知人名，找2-4个中文字
+                                m = re.search(r'[\u4e00-\u9fa5]{2,4}', s_normalized)
+                                if m:
+                                    return m.group(0)
+                                return s_normalized.strip()
+                            
+                            elif col_type == 'name':
+                                # 任务名称：
+                                # 1. 如果有换行，取包含中文/TR/project的最长行
+                                result = s_normalized
+                                if '\n' in s:
+                                    lines = [l.strip() for l in s.split('\n') if l.strip()]
+                                    candidates = []
+                                    for l in lines:
+                                        if re.match(r'^[\d，,.:：；;、\-_/\\|]+$', l):
+                                            continue
+                                        if len(re.findall(r'[\u4e00-\u9fa5]', l)) > 0 or re.match(r'^TR[\dA-Za-z]*', l, re.I) or re.match(r'^project[:：]', l, re.I):
+                                            candidates.append(l)
+                                    if candidates:
+                                        result = max(candidates, key=len)
+                                # 2. 去掉开头的纯数字/符号垃圾前缀
+                                result = re.sub(r'^[\d，,.:：；;、\-_/\\|\s]+', '', result)
+                                # 3. 去掉结尾的大写字母/数字/符号垃圾（CCC、888、::等）
+                                result = re.sub(r'[\s:：；;]+[A-Z0-9:：；;、\-_/\\|]+$', '', result)
+                                # 4. TR行特殊处理：只保留 TR+数字/字母
+                                if re.match(r'^TR[\dA-Za-z]*', result, re.I):
+                                    m = re.match(r'^(TR[\dA-Za-z]*)', result, re.I)
+                                    if m:
+                                        result = m.group(1)
+                                return result.strip()
+                            
+                            else:
+                                return s_normalized
+                        
+                        def get_cell(idx, col_type='other'):
                             if idx is None or idx >= len(row):
                                 return ''
-                            val = row[idx]
-                            return str(val).replace('\n', ' ').strip() if val else ''
+                            return _clean_lines(row[idx], col_type)
                         
                         task_id = get_cell(col_idx.get('id'))
                         if not task_id or not re.match(r'^\d+$', task_id):
                             continue
                         
-                        name = get_cell(col_idx.get('name'))
+                        name = get_cell(col_idx.get('name'), 'name')
                         if not name:
                             continue
                         
                         duration = get_cell(col_idx.get('duration'))
-                        start_raw = get_cell(col_idx.get('start'))
-                        end_raw = get_cell(col_idx.get('end'))
+                        start_raw = get_cell(col_idx.get('start'), 'date')
+                        end_raw = get_cell(col_idx.get('end'), 'date')
                         deliverable = get_cell(col_idx.get('deliverable'))
-                        owner = get_cell(col_idx.get('owner'))
-                        work_raw = get_cell(col_idx.get('work'))
+                        owner = get_cell(col_idx.get('owner'), 'owner')
+                        work_raw = get_cell(col_idx.get('work'), 'work')
                         
                         # 清理责任人：从混合文本中提取真实人名
                         known_names = ['陈雷雷', '毛文豪', '袁知正', '文春英', '肖庆杨']
