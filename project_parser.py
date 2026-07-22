@@ -902,19 +902,11 @@ def parse_pdf(pdf_path):
         # 按ID排序
         all_tasks.sort(key=lambda t: t['id'])
         
-        # === 修复1: 检查是否有显式project行，没有的话把首个顶级任务标记为project ===
+        # 检查是否有显式project行，没有的话把首个顶级任务标记为project
         has_project = any(re.match(r'^project[:：]', t['name'], re.I) for t in all_tasks)
         if not has_project and all_tasks:
             all_tasks[0]['name'] = 'project: ' + all_tasks[0]['name']
             debug_info.append(f'⚠ 未检测到project标识，将首个任务标记为project: {all_tasks[0]["name"]}')
-        
-        # === 修复2: 如果work列为空但duration有值，从工期推算工时 ===
-        for t in all_tasks:
-            if t['work'] == 0 and t.get('duration'):
-                dur_val = _parse_work_hours(t['duration'])
-                if dur_val > 0:
-                    t['work'] = dur_val
-                    debug_info.append(f'  从工期推算: {t["name"][:20]} duration={t["duration"]} → work={dur_val}h')
         
         # 推断缩进层级
         tasks_with_indent = []
