@@ -1157,9 +1157,20 @@ window.CURRENT_USER = {user_info};
             projects = sync_excel.read_excel_projects()
             # 【死循环修复】必须返回 lastUpdate，否则客户端无法正确同步版本
             data_info = load_data()
+            # 【修复】返回当前日期，避免客户端显示的点检日期是HTML生成时的旧日期
+            from datetime import datetime, timezone, timedelta
+            try:
+                shanghai_tz = timezone(timedelta(hours=8))
+                today_dt = datetime.now(shanghai_tz)
+            except:
+                today_dt = datetime.now()
+            today_str = today_dt.strftime('%Y-%m-%d')
+            three_days_later = (today_dt + timedelta(days=3)).strftime('%Y-%m-%d')
             self.send_json({
                 'allProjects': projects,
-                'lastUpdate': data_info.get('lastUpdate', '')
+                'lastUpdate': data_info.get('lastUpdate', ''),
+                'today': today_str,
+                'threeDaysLater': three_days_later
             })
             return
 

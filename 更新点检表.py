@@ -1294,6 +1294,14 @@ async function refreshRawData() {
       const data = await resp.json();
       if (data.allProjects) {
         RAW_DATA.allProjects = data.allProjects;
+        // 【修复】更新当前日期，避免点检日期停留在HTML生成时的旧日期
+        if (data.today) RAW_DATA.today = data.today;
+        if (data.threeDaysLater) RAW_DATA.threeDaysLater = data.threeDaysLater;
+        // 更新页面显示
+        const todayEl = document.getElementById('todayDate');
+        if (todayEl) todayEl.textContent = RAW_DATA.today;
+        const alertEl = document.getElementById('alertDate');
+        if (alertEl) alertEl.textContent = RAW_DATA.threeDaysLater;
         // 重建部门索引
         const depts = {};
         data.allProjects.forEach(function(p) {
@@ -1430,6 +1438,14 @@ async function collabLoadData() {
     if (data.allProjects) {
       // 【关键】用服务器返回的最新数据替换 RAW_DATA
       RAW_DATA.allProjects = data.allProjects;
+      // 【修复】更新当前日期
+      if (data.today) RAW_DATA.today = data.today;
+      if (data.threeDaysLater) RAW_DATA.threeDaysLater = data.threeDaysLater;
+      // 更新页面显示
+      const todayEl = document.getElementById('todayDate');
+      if (todayEl) todayEl.textContent = RAW_DATA.today;
+      const alertEl = document.getElementById('alertDate');
+      if (alertEl) alertEl.textContent = RAW_DATA.threeDaysLater;
       
       // 重建部门索引（只包含未归档的项目）
       const depts = {};
@@ -3260,6 +3276,14 @@ async function callActionApi(endpoint, data) {
           if (projData.allProjects) {
             // 用服务器返回的最新数据替换 RAW_DATA
             RAW_DATA.allProjects = projData.allProjects;
+            // 【修复】更新当前日期
+            if (projData.today) RAW_DATA.today = projData.today;
+            if (projData.threeDaysLater) RAW_DATA.threeDaysLater = projData.threeDaysLater;
+            // 更新页面显示
+            const todayEl = document.getElementById('todayDate');
+            if (todayEl) todayEl.textContent = RAW_DATA.today;
+            const alertEl = document.getElementById('alertDate');
+            if (alertEl) alertEl.textContent = RAW_DATA.threeDaysLater;
             // 重建部门索引
             const depts = {};
             projData.allProjects.forEach(function(p) {
