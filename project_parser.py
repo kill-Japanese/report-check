@@ -377,8 +377,8 @@ def _extract_resources(tasks):
         if t['is_project'] or t['is_tr']:
             continue
         
-        # 过滤规则: 责任人空 且 工时为0 且 没有日期信息 → 不提取
-        if not t['owner'] and t['work'] == 0 and not t['start'] and not t['end']:
+        # 过滤规则: 责任人空 且 工时为0 → 不提取
+        if not t['owner'] and t['work'] == 0:
             continue
         
         # 资源名称 = 责任人优先，否则用任务名
@@ -558,11 +558,55 @@ def parse_pdf(pdf_path):
         with pdfplumber.open(pdf_path) as pdf:
             debug_info.append(f'PDF共{len(pdf.pages)}页')
             for page_idx, page in enumerate(pdf.pages):
-                tables = page.extract_tables()
+                # 尝试多种表格提取策略，取列数最多的结果
+                all_tables_attempts = []
+                
+                # 策略1: 默认（竖线检测）
+                try:
+                    t1 = page.extract_tables()
+                    all_tables_attempts.append(('默认', t1))
+                except:
+                    pass
+                
+                # 策略2: 文本位置检测（text strategy）
+                try:
+                    t2 = page.extract_tables(table_settings={
+                        'vertical_strategy': 'text',
+                        'horizontal_strategy': 'text',
+                        'snap_tolerance': 3,
+                    })
+                    all_tables_attempts.append(('文本位置', t2))
+                except:
+                    pass
+                
+                # 策略3: 混合策略
+                try:
+                    t3 = page.extract_tables(table_settings={
+                        'vertical_strategy': 'lines',
+                        'horizontal_strategy': 'text',
+                        'intersection_tolerance': 5,
+                    })
+                    all_tables_attempts.append(('混合', t3))
+                except:
+                    pass
+                
+                # 选列数最多的策略结果
+                best_tables = []
+                best_strategy = ''
+                max_cols = 0
+                for strategy, tables in all_tables_attempts:
+                    if tables:
+                        for table in tables:
+                            if len(table) > 0 and len(table[0]) > max_cols:
+                                max_cols = len(table[0])
+                                best_tables = tables
+                                best_strategy = strategy
+                
+                tables = best_tables if best_tables else page.extract_tables()
+                debug_info.append(f'第{page_idx+1}页: 策略={best_strategy or "默认"}, {len(tables)}个表格, 最多{max_cols}列')
+                
                 if not tables:
                     continue
-                
-                debug_info.append(f'第{page_idx+1}页: {len(tables)}个表格')
                 for t_idx, table in enumerate(tables):
                     if len(table) < 2:
                         continue
@@ -574,7 +618,7 @@ def parse_pdf(pdf_path):
                     if not is_task_table:
                         continue
                     
-                    debug_info.append(f'  表格{t_idx+1}: 识别为任务表，共{len(table)}行, 表头={first_row[:5]}')
+                    debug_info.append(f'  表格{t_idx+1}: 识别为任务表，共{len(table)}行, {len(first_row)}列, 表头={first_row}')
                     
                     # 找到列索引
                     col_idx = {}
@@ -592,9 +636,9 @@ def parse_pdf(pdf_path):
                             col_idx['end'] = i
                         elif '交付物' in h_clean:
                             col_idx['deliverable'] = i
-                        elif '责任人' in h_clean or '负责人' in h_clean:
+                        elif '责任人' in h_clean or '负责人' in h_clean or '资源名称' in h_clean:
                             col_idx['owner'] = i
-                        elif '工时' in h_clean:
+                        elif '工时' in h_clean or '工作时间' in h_clean:
                             col_idx['work'] = i
                     
                     debug_info.append(f'  列映射: {col_idx}')
