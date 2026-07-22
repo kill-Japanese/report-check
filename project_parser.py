@@ -414,9 +414,19 @@ def _extract_resources(tasks):
     return resources
 
 def _merge_design_review(resources):
-    """合并设计+评审任务（同名资源，资源类型分别含设计和评审）"""
+    """合并设计+评审任务（同名资源，资源类型分别含设计和评审）
+    约束：除了资源名称一致外，资源类型的基础名称（去掉设计/评审）也必须匹配
+    例如：固件编码设计 + 固件编码评审 → 合并（基础名都是"固件编码"）
+         需求评审 + SE文档设计 → 不合并（基础名不同）
+    """
     if not resources:
         return resources
+    
+    def _get_base_name(type_name):
+        """去掉资源类型中的"设计"或"评审"，得到基础名称"""
+        base = type_name
+        base = base.replace('设计', '').replace('评审', '')
+        return base.strip()
     
     # 按资源名称分组
     from collections import defaultdict
@@ -432,28 +442,36 @@ def _merge_design_review(resources):
         design_items = [(i, r) for i, r in items if '设计' in r['资源类型']]
         review_items = [(i, r) for i, r in items if '评审' in r['资源类型']]
         
-        # 只有同时有设计和评审才合并
+        # 只有同时有设计和评审才尝试合并
         if design_items and review_items:
-            # 取第一个设计和第一个评审配对
-            d_idx, design = design_items[0]
-            r_idx, review = review_items[0]
-            
-            # 合并规则
-            merged = dict(review)  # 以评审为基础（资源类型用评审的）
-            merged['开始时间'] = min(design['开始时间'], review['开始时间'])  # 取最早
-            merged['结束时间'] = max(design['结束时间'], review['结束时间'])  # 取最晚
-            merged['工时'] = max(design['工时'], review['工时'])  # 取较长工时
-            # 重新计算日平均工时
-            workdays = _get_workdays(merged['开始时间'], merged['结束时间'])
-            if merged['工时'] > 0 and workdays > 0:
-                merged['日平均工时'] = round(merged['工时'] / workdays, 1)
-            merged['warnings'] = list(set(design.get('warnings', []) + review.get('warnings', [])))
-            merged['is_unresolved_tr'] = design.get('is_unresolved_tr', False) or review.get('is_unresolved_tr', False)
-            merged['is_unresolved_project'] = design.get('is_unresolved_project', False) or review.get('is_unresolved_project', False)
-            
-            to_remove.add(d_idx)
-            to_remove.add(r_idx)
-            merged_results.append((min(d_idx, r_idx), merged))
+            # 按基础名称匹配（只有基础名称相同才合并）
+            matched_reviews = set()
+            for d_idx, design in design_items:
+                d_base = _get_base_name(design['资源类型'])
+                for r_idx, review in review_items:
+                    if r_idx in matched_reviews:
+                        continue
+                    r_base = _get_base_name(review['资源类型'])
+                    # 基础名称必须匹配（或一方为空另一方也为空的情况不合并）
+                    if d_base and r_base and d_base == r_base:
+                        # 合并规则
+                        merged = dict(review)  # 以评审为基础（资源类型用评审的）
+                        merged['开始时间'] = min(design['开始时间'], review['开始时间'])  # 取最早
+                        merged['结束时间'] = max(design['结束时间'], review['结束时间'])  # 取最晚
+                        merged['工时'] = max(design['工时'], review['工时'])  # 取较长工时
+                        # 重新计算日平均工时
+                        workdays = _get_workdays(merged['开始时间'], merged['结束时间'])
+                        if merged['工时'] > 0 and workdays > 0:
+                            merged['日平均工时'] = round(merged['工时'] / workdays, 1)
+                        merged['warnings'] = list(set(design.get('warnings', []) + review.get('warnings', [])))
+                        merged['is_unresolved_tr'] = design.get('is_unresolved_tr', False) or review.get('is_unresolved_tr', False)
+                        merged['is_unresolved_project'] = design.get('is_unresolved_project', False) or review.get('is_unresolved_project', False)
+                        
+                        to_remove.add(d_idx)
+                        to_remove.add(r_idx)
+                        matched_reviews.add(r_idx)
+                        merged_results.append((min(d_idx, r_idx), merged))
+                        break
     
     # 构建最终列表
     result = []
@@ -658,6 +676,44 @@ def parse_pdf(pdf_path):
                     
                     # 解析数据行
                     for row in table[1:]:
+                        def _is_gantt_noise(s):
+                            """判断字符串是否为纯甘特图噪音（无有效数据）"""
+                            if not s or not s.strip():
+                                return True
+                            t = s.strip()
+                            # 纯符号/数字/大写字母的组合，不含中文
+                            if not re.search(r'[\u4e00-\u9fa5]', t):
+                                # 检查是否是典型的甘特图标签模式
+                                # 如: CCC ::, 888 66, ，，，, :::, 000 00, 222 6 44
+                                if re.match(r'^[A-Z0-9，,.:：；;、\-_/\\|\s]+$', t):
+                                    return True
+                                # 重复字符3次以上: CCC, 888, ，，，
+                                if re.match(r'^(.)\1{2,}', t):
+                                    return True
+                            return False
+
+                        def _strip_gantt_suffix(text):
+                            """移除任务名称开头和末尾的甘特图噪音"""
+                            if not text:
+                                return text
+                            result = text
+                            # 反复移除末尾的甘特图标签（可能有多层）
+                            for _ in range(5):
+                                # 空格 + 纯大写字母(2+) + 可选符号: " CCC ::"
+                                new_result = re.sub(r'\s+[A-Z]{2,}[\s:：；;、\-_/\\|]*$', '', result)
+                                # 空格 + 纯数字(2+) + 可选符号: " 888 66"
+                                new_result = re.sub(r'\s+\d{2,}[\s:：；;、\-_/\\|]*$', '', new_result)
+                                # 末尾纯符号串: " ::"  " :::"
+                                new_result = re.sub(r'\s+[:：；;、\-_/\\|]{2,}$', '', new_result)
+                                # 末尾直接跟的纯数字(2+)：测试用例设计888
+                                new_result = re.sub(r'\d{2,}$', '', new_result)
+                                # 末尾直接跟的纯大写字母(2+)：文档CCC
+                                new_result = re.sub(r'[A-Z]{2,}$', '', new_result)
+                                if new_result == result:
+                                    break
+                                result = new_result
+                            return result.strip()
+
                         def _clean_lines(raw_val, col_type='name'):
                             """清理单元格（处理甘特图标签混入的垃圾数据）
                             col_type: name(任务名称), date(日期), work(工时), owner(责任人), other
@@ -679,7 +735,29 @@ def parse_pdf(pdf_path):
                                     s = re.sub(r'\n+', ' ', s)
                                     
                                     # 方法1: 找 "月D日" 模式，然后往前找年份
-                                    # 同时处理年月之间有垃圾字符的情况（如2026年CCC7月23日）
+                                    # 同时处理年月之间有垃圾字符的情况（如2026年CCC7月23日、2026888年7月31日）
+                                    def _fix_year(y_str):
+                                        """从污染的年份字符串中提取正确的4位年份"""
+                                        if not y_str:
+                                            return '2026'
+                                        y = y_str.strip()
+                                        # 已经是正确的4位年份
+                                        if len(y) == 4 and y.isdigit() and 1900 <= int(y) <= 2100:
+                                            return y
+                                        # 从数字串中找合理的4位年份（1900-2100）
+                                        digits = re.findall(r'\d+', y)
+                                        for d in digits:
+                                            # 找4位合理年份
+                                            for i in range(len(d) - 3):
+                                                four = d[i:i+4]
+                                                if 1900 <= int(four) <= 2100:
+                                                    return four
+                                        # 找不到合理年份，取最后2位加20
+                                        all_nums = ''.join(digits)
+                                        if len(all_nums) >= 2:
+                                            return '20' + all_nums[-2:]
+                                        return '2026'
+                                    
                                     m = re.search(r'(\d{1,2})\s*月\s*(\d{1,2})\s*日', s)
                                     if m:
                                         month, day = m.group(1), m.group(2)
@@ -687,23 +765,17 @@ def parse_pdf(pdf_path):
                                         pre = s[:m.start(1)]
                                         year_m = re.search(r'(\d+)\s*年\s*$', pre)
                                         if year_m:
-                                            y = year_m.group(1)
-                                            # 年份修正
-                                            if len(y) > 4 or int(y) > 2100:
-                                                y = '20' + y[-2:]
-                                            elif len(y) == 3:
-                                                y = '20' + y[-2:]
-                                            elif len(y) <= 2:
-                                                y = '20' + y.zfill(2)
+                                            y = _fix_year(year_m.group(1))
                                             return f'{y}年{month}月{day}日'
                                         # 没找到年字，往前找最近的数字串
                                         digits = re.findall(r'(\d+)', pre)
                                         if digits:
-                                            y = digits[-1][-4:]
-                                            if len(y) > 4 or (len(y) == 4 and int(y) > 2100):
-                                                y = '20' + y[-2:]
-                                            elif len(y) <= 2:
-                                                y = '20' + y.zfill(2)
+                                            # 从后往前找合理的年份
+                                            for d in reversed(digits):
+                                                fixed = _fix_year(d)
+                                                if fixed != '2026' or len(d) >= 2:
+                                                    return f'{fixed}年{month}月{day}日'
+                                            y = _fix_year(digits[-1])
                                             return f'{y}年{month}月{day}日'
                                     
                                     # 方法2: 标准格式
@@ -718,36 +790,88 @@ def parse_pdf(pdf_path):
                                 return s_normalized
                             
                             elif col_type == 'work':
-                                # 工时：优先取换行后第一行的第一个合理数字
-                                # 因为换行前通常是甘特图标签（如222\n6 44 → 6是工时，44是标签）
+                                # 工时：优先取中间的合理数字（甘特图标签通常在两端）
+                                # 如 222 6 44 → 6是工时，00 2 888 → 2是工时
+                                def _is_gantt_num(num_str):
+                                    """判断数字是否是甘特图标签（重复数字如00, 11, 44, 888）"""
+                                    if re.match(r'^(\d)\1{1,}$', num_str):
+                                        return True
+                                    return False
+                                
                                 if '\n' in s:
                                     lines = [l.strip() for l in s.split('\n') if l.strip()]
                                     # 从最后一行（通常是真实数据行）往前找
                                     for l in reversed(lines):
                                         nums = re.findall(r'([\d.]+)', l)
+                                        valid_nums = []
                                         for n in nums:
                                             try:
                                                 val = float(n)
                                                 if 0 <= val <= 200:
-                                                    return n
+                                                    valid_nums.append(n)
                                             except:
                                                 pass
-                                # 没换行的情况，找所有合理数字
+                                        if valid_nums:
+                                            # 过滤掉甘特图标签（重复数字）
+                                            real_nums = [n for n in valid_nums if not _is_gantt_num(n)]
+                                            if not real_nums:
+                                                real_nums = valid_nums  # 全是标签就用原值
+                                            # 优先取中间值（两端是甘特图标签）
+                                            if len(real_nums) >= 3:
+                                                return real_nums[len(real_nums)//2]
+                                            elif len(real_nums) == 2:
+                                                # 取非标签的那个，如果都不是标签取第一个非零或最后一个
+                                                g0 = _is_gantt_num(real_nums[0])
+                                                g1 = _is_gantt_num(real_nums[1])
+                                                if g0 and not g1:
+                                                    return real_nums[1]
+                                                elif g1 and not g0:
+                                                    return real_nums[0]
+                                                else:
+                                                    return real_nums[0] if float(real_nums[0]) > 0 else real_nums[1]
+                                            else:
+                                                return real_nums[0]
+                                # 没换行的情况
                                 nums = re.findall(r'([\d.]+)', s_normalized)
+                                valid_nums = []
                                 for n in nums:
                                     try:
                                         val = float(n)
                                         if 0 <= val <= 200:
-                                            return n
+                                            valid_nums.append((n, val))
                                     except:
                                         pass
+                                if valid_nums:
+                                    # 优先取中间值，排除明显的甘特图标签（重复数字如00, 888, 666）
+                                    def _is_gantt_label(num_str, val):
+                                        # 重复数字2次以上：00, 888, 66, 222
+                                        if re.match(r'^(\d)\1{1,}$', num_str):
+                                            return True
+                                        return False
+                                    
+                                    real_values = [(n, v) for n, v in valid_nums if not _is_gantt_label(n, v)]
+                                    if real_values:
+                                        if len(real_values) >= 3:
+                                            return real_values[len(real_values)//2][0]
+                                        elif len(real_values) == 2:
+                                            return real_values[1][0]
+                                        else:
+                                            return real_values[0][0]
+                                    # 全是标签，取第一个非零或最后一个
+                                    non_zero = [(n, v) for n, v in valid_nums if v > 0]
+                                    if non_zero:
+                                        return non_zero[0][0]
+                                    return valid_nums[-1][0]
                                 if nums:
                                     return nums[-1]
                                 return ''
                             
                             elif col_type == 'owner':
+                                # 先判断是否纯甘特图噪音
+                                if _is_gantt_noise(s_normalized):
+                                    return ''
                                 # 责任人：优先从已知人名列表提取（支持模糊匹配）
-                                known_names = ['陈雷雷', '毛文豪', '袁知正', '文春英', '肖庆杨']
+                                known_names = ['陈雷雷', '毛文豪', '袁知正', '文春英', '肖庆杨', '文善英']
                                 # 精确子串匹配
                                 for n in known_names:
                                     if n in s_normalized:
@@ -768,6 +892,9 @@ def parse_pdf(pdf_path):
                                 m = re.search(r'[\u4e00-\u9fa5]{2,4}', s_normalized)
                                 if m:
                                     return m.group(0)
+                                # 如果看起来像噪音（无中文，纯符号数字），返回空
+                                if _is_gantt_noise(s_normalized):
+                                    return ''
                                 return s_normalized.strip()
                             
                             elif col_type == 'name':
@@ -784,10 +911,10 @@ def parse_pdf(pdf_path):
                                             candidates.append(l)
                                     if candidates:
                                         result = max(candidates, key=len)
-                                # 2. 去掉开头的纯数字/符号垃圾前缀
+                                # 2. 去掉开头的纯数字/符号垃圾前缀（，，，、888、00等）
                                 result = re.sub(r'^[\d，,.:：；;、\-_/\\|\s]+', '', result)
-                                # 3. 去掉结尾的大写字母/数字/符号垃圾（CCC、888、::等）
-                                result = re.sub(r'[\s:：；;]+[A-Z0-9:：；;、\-_/\\|]+$', '', result)
+                                # 3. 用专用函数移除末尾甘特图噪音（CCC ::、888 66等）
+                                result = _strip_gantt_suffix(result)
                                 # 4. TR行特殊处理：只保留 TR+数字/字母
                                 if re.match(r'^TR[\dA-Za-z]*', result, re.I):
                                     m = re.match(r'^(TR[\dA-Za-z]*)', result, re.I)
