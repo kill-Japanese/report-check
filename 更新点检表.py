@@ -4373,7 +4373,7 @@ async function openImportModal() {
       
       <!-- Tab 按钮 -->
       <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e5e7eb">
-        <button class="import-tab-btn" data-tab="text" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid #8b5cf6;color:#8b5cf6;font-weight:600">📋 文本粘贴</button>
+        <button class="import-tab-btn" data-tab="text" data-active="true" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid #8b5cf6;color:#8b5cf6;font-weight:600">📋 文本粘贴</button>
         <button class="import-tab-btn" data-tab="mpp" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📁 .mpp文件${importFeatures.mpp ? '' : ' 🔒'}</button>
         <button class="import-tab-btn" data-tab="pdf" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📄 PDF文件${importFeatures.pdf ? '' : ' 🔒'}</button>
         <button class="import-tab-btn" data-tab="screenshot" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">🖼️ 截图${importFeatures.ocr ? '' : ' 🔒'}</button>
@@ -4470,9 +4470,11 @@ async function openImportModal() {
       modal.querySelectorAll('.import-tab-btn').forEach(b => {
         b.style.borderBottom = '3px solid transparent';
         b.style.color = '#6b7280';
+        b.removeAttribute('data-active');
       });
       this.style.borderBottom = '3px solid #8b5cf6';
       this.style.color = '#8b5cf6';
+      this.setAttribute('data-active', 'true');
       // 切换内容
       modal.querySelectorAll('.import-tab-content').forEach(c => {
         c.style.display = 'none';
@@ -4547,7 +4549,7 @@ function deleteImportRow(idx) {
 async function parseImportData() {
   try {
     // 判断当前Tab
-    const activeTab = document.querySelector('.import-tab-btn[style*="border-bottom: 3px solid #8b5cf6"]');
+    const activeTab = document.querySelector('.import-tab-btn[data-active="true"]');
     if (!activeTab) { alert('请选择导入方式'); return; }
     
     const tabType = activeTab.dataset.tab;
