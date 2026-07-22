@@ -1526,6 +1526,25 @@ window.CURRENT_USER = {user_info};
                             os.remove(tmp_path)
                         except:
                             pass
+            elif parse_type == 'pdf':
+                import tempfile
+                import base64
+                tmp_dir = tempfile.gettempdir()
+                safe_name = os.path.basename(filename) if filename else f'import_{int(time.time())}.pdf'
+                tmp_path = os.path.join(tmp_dir, safe_name)
+                try:
+                    file_data = base64.b64decode(text) if text else b''
+                    with open(tmp_path, 'wb') as f:
+                        f.write(file_data)
+                    result = project_parser.parse_pdf(tmp_path)
+                except Exception as e:
+                    result = {'success': False, 'error': f'PDF文件处理失败: {str(e)}'}
+                finally:
+                    if os.path.exists(tmp_path):
+                        try:
+                            os.remove(tmp_path)
+                        except:
+                            pass
             elif parse_type == 'image':
                 result = {'success': False, 'error': 'OCR功能暂不可用'}
             else:

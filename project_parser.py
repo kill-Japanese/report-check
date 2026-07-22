@@ -530,16 +530,224 @@ def parse_mpp(file_path):
         }
 
 # ============================================================
+# PDF 解析（依赖 pdfplumber 库）
+# ============================================================
+
+def parse_pdf(pdf_path):
+    """解析PDF格式的Project计划表
+    
+    支持 Microsoft Project 导出的PDF甘特图，从左侧任务表格提取数据
+    
+    Returns:
+        dict: 同 parse_text 的返回格式
+    """
+    # 检测 pdfplumber
+    try:
+        import pdfplumber
+    except ImportError:
+        return {
+            'success': False,
+            'error': 'PDF解析库(pdfplumber)未安装，当前环境不支持PDF文件解析',
+            'resources': []
+        }
+    
+    try:
+        all_tasks = []
+        
+        with pdfplumber.open(pdf_path) as pdf:
+            for page_idx, page in enumerate(pdf.pages):
+                tables = page.extract_tables()
+                if not tables:
+                    continue
+                
+                for table in tables:
+                    if len(table) < 2:
+                        continue
+                    
+                    # 检查是否是任务表格
+                    first_row = [str(c).replace('\n', ' ').strip() if c else '' for c in table[0]]
+                    is_task_table = any('标识号' in c or '任务名称' in c for c in first_row)
+                    
+                    if not is_task_table:
+                        continue
+                    
+                    # 找到列索引
+                    col_idx = {}
+                    for i, h in enumerate(first_row):
+                        h_clean = h.replace('\n', '').strip()
+                        if '标识号' in h_clean:
+                            col_idx['id'] = i
+                        elif '任务名称' in h_clean:
+                            col_idx['name'] = i
+                        elif '工期' in h_clean and '工时' not in h_clean:
+                            col_idx['duration'] = i
+                        elif '开始时间' in h_clean or '开始' in h_clean:
+                            col_idx['start'] = i
+                        elif '完成时间' in h_clean or '结束时间' in h_clean or '完成' in h_clean:
+                            col_idx['end'] = i
+                        elif '交付物' in h_clean:
+                            col_idx['deliverable'] = i
+                        elif '责任人' in h_clean or '负责人' in h_clean:
+                            col_idx['owner'] = i
+                        elif '工时' in h_clean:
+                            col_idx['work'] = i
+                    
+                    # 必须有 id 和 name 列
+                    if 'id' not in col_idx or 'name' not in col_idx:
+                        continue
+                    
+                    # 解析数据行
+                    for row in table[1:]:
+                        def get_cell(idx):
+                            if idx is None or idx >= len(row):
+                                return ''
+                            val = row[idx]
+                            return str(val).replace('\n', ' ').strip() if val else ''
+                        
+                        task_id = get_cell(col_idx.get('id'))
+                        if not task_id or not re.match(r'^\d+$', task_id):
+                            continue
+                        
+                        name = get_cell(col_idx.get('name'))
+                        if not name:
+                            continue
+                        
+                        duration = get_cell(col_idx.get('duration'))
+                        start_raw = get_cell(col_idx.get('start'))
+                        end_raw = get_cell(col_idx.get('end'))
+                        deliverable = get_cell(col_idx.get('deliverable'))
+                        owner = get_cell(col_idx.get('owner'))
+                        work_raw = get_cell(col_idx.get('work'))
+                        
+                        # 清理责任人：从混合文本中提取真实人名
+                        known_names = ['陈雷雷', '毛文豪', '袁知正', '文春英', '肖庆杨']
+                        
+                        def _extract_owner(s):
+                            """从字符串中提取已知人名（支持模糊匹配）"""
+                            if not s:
+                                return ''
+                            # 精确子串匹配
+                            for n in known_names:
+                                if n in s:
+                                    return n
+                            # 模糊匹配: 按字序匹配（处理"毛文文档豪"→"毛文豪"的情况）
+                            for n in known_names:
+                                idx = 0
+                                match = True
+                                for ch in n:
+                                    pos = s.find(ch, idx)
+                                    if pos == -1:
+                                        match = False
+                                        break
+                                    idx = pos + 1
+                                if match:
+                                    return n
+                            return ''
+                        
+                        owner_clean = _extract_owner(owner)
+                        # 如果交付物列包含人名，也提取
+                        if not owner_clean:
+                            owner_clean = _extract_owner(deliverable)
+                            if owner_clean:
+                                deliverable = deliverable.replace(owner_clean, '').strip('，, ')
+                        
+                        # 如果从责任人列中提取到了人名，但原始内容比人名长
+                        # 说明有交付物内容被错误地划到了责任人列，需要还回去
+                        if owner_clean and owner and owner != owner_clean:
+                            # 从owner中移除匹配到的人名（按字序移除）
+                            leftover = owner
+                            for ch in owner_clean:
+                                pos = leftover.find(ch)
+                                if pos != -1:
+                                    leftover = leftover[:pos] + leftover[pos+1:]
+                            leftover = leftover.strip('，, ')
+                            if leftover:
+                                deliverable = (deliverable + leftover) if deliverable else leftover
+                        
+                        # 如果责任人包含"报告"、"文档"等交付物关键词，清理掉
+                        if not owner_clean and owner:
+                            if any(kw in owner for kw in ['报告', '文档', '配置', '设计', '评审', '产物', '申请']):
+                                deliverable = (deliverable + '，' + owner).strip('，') if deliverable else owner
+                                owner_clean = ''
+                            else:
+                                owner_clean = owner
+                        else:
+                            owner_clean = owner_clean or owner
+                        
+                        # 解析日期和工时
+                        start = _parse_date(start_raw)
+                        end = _parse_date(end_raw)
+                        work = _parse_work_hours(work_raw)
+                        
+                        all_tasks.append({
+                            'id': int(task_id),
+                            'name': name,
+                            'duration': duration,
+                            'start': start,
+                            'end': end,
+                            'deliverable': deliverable,
+                            'owner': owner_clean,
+                            'work': work,
+                        })
+        
+        if not all_tasks:
+            return {
+                'success': False,
+                'error': 'PDF中未找到有效的任务表格，请确认是Microsoft Project导出的PDF',
+                'resources': []
+            }
+        
+        # 按ID排序
+        all_tasks.sort(key=lambda t: t['id'])
+        
+        # 推断缩进层级
+        tasks_with_indent = []
+        for i, t in enumerate(all_tasks):
+            name = t['name']
+            if re.match(r'^project[:：]', name, re.I):
+                indent = 0
+            elif re.match(r'^TR[\dA-Z]*', name, re.I):
+                indent = 2
+            else:
+                # 子任务：找最近的TR或project祖先
+                indent = 4
+                for j in range(i-1, -1, -1):
+                    prev = all_tasks[j]
+                    if re.match(r'^TR[\dA-Z]*', prev['name'], re.I):
+                        indent = 4
+                        break
+                    elif re.match(r'^project[:：]', prev['name'], re.I):
+                        indent = 2
+                        break
+            tasks_with_indent.append((t, indent))
+        
+        # 构造文本格式，复用 parse_text 的后续流程
+        lines = ['任务名称\t开始时间\t结束时间\t工时\t责任人']
+        for t, indent in tasks_with_indent:
+            padded_name = ' ' * indent + t['name']
+            lines.append(f"{padded_name}\t{t['start'] or ''}\t{t['end'] or ''}\t{t['work']}h\t{t['owner']}")
+        
+        return parse_text('\n'.join(lines))
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'PDF解析失败: {str(e)}',
+            'resources': []
+        }
+
+# ============================================================
 # 环境检测
 # ============================================================
 
 def get_available_features():
     """检测当前环境可用的解析功能
-    Returns: dict with keys: text, mpp, ocr
+    Returns: dict with keys: text, mpp, pdf, ocr
     """
     features = {
         'text': True,  # 文本解析总是可用
         'mpp': False,
+        'pdf': False,
         'ocr': False
     }
     
@@ -547,6 +755,13 @@ def get_available_features():
     try:
         from mpxj import Reader
         features['mpp'] = True
+    except ImportError:
+        pass
+    
+    # 检测 pdfplumber
+    try:
+        import pdfplumber
+        features['pdf'] = True
     except ImportError:
         pass
     

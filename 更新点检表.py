@@ -4348,7 +4348,7 @@ function generateEmailFromName(name) {
 
 // ==================== 新增：从Project导入 ====================
 let importParsedData = [];  // 存储解析后的预览数据
-let importFeatures = { text: true, mpp: false, ocr: false };  // 可用功能
+let importFeatures = { text: true, mpp: false, pdf: false, ocr: false };  // 可用功能
 
 async function openImportModal() {
   const depts = Object.keys(RAW_DATA.depts || {}).sort();
@@ -4375,6 +4375,7 @@ async function openImportModal() {
       <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e5e7eb">
         <button class="import-tab-btn" data-tab="text" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid #8b5cf6;color:#8b5cf6;font-weight:600">📋 文本粘贴</button>
         <button class="import-tab-btn" data-tab="mpp" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📁 .mpp文件${importFeatures.mpp ? '' : ' 🔒'}</button>
+        <button class="import-tab-btn" data-tab="pdf" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📄 PDF文件${importFeatures.pdf ? '' : ' 🔒'}</button>
         <button class="import-tab-btn" data-tab="screenshot" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">🖼️ 截图${importFeatures.ocr ? '' : ' 🔒'}</button>
       </div>
       
@@ -4392,6 +4393,16 @@ async function openImportModal() {
           <label>选择.mpp文件</label>
           <input type="file" id="importMppFile" accept=".mpp">
           ${importFeatures.mpp ? '' : '<div class="form-hint" style="color:#dc2626">⚠️ .mpp解析功能暂不可用，请先在服务器端安装相关依赖</div>'}
+        </div>
+      </div>
+      
+      <!-- Tab: PDF文件 -->
+      <div id="import-tab-pdf" class="import-tab-content" style="display:none">
+        <div class="form-group">
+          <label>选择PDF文件（Microsoft Project导出的PDF）</label>
+          <input type="file" id="importPdfFile" accept=".pdf">
+          <div class="form-hint" style="color:#6b7280;font-size:12px;margin-top:4px">💡 从Project中选择"文件→导出→创建PDF/XPS"，确保左侧任务表格包含在PDF中</div>
+          ${importFeatures.pdf ? '' : '<div class="form-hint" style="color:#dc2626">⚠️ PDF解析功能暂不可用，请先在服务器端安装pdfplumber依赖</div>'}
         </div>
       </div>
       
@@ -4445,6 +4456,10 @@ async function openImportModal() {
       // 检查功能是否可用
       if (tab === 'mpp' && !importFeatures.mpp) {
         alert('.mpp解析功能暂不可用');
+        return;
+      }
+      if (tab === 'pdf' && !importFeatures.pdf) {
+        alert('PDF解析功能暂不可用');
         return;
       }
       if (tab === 'screenshot' && !importFeatures.ocr) {
@@ -4541,7 +4556,7 @@ async function parseImportData() {
     if (tabType === 'text') {
       const text = document.getElementById('importTextArea').value.trim();
       if (!text) { alert('请粘贴Project数据'); return; }
-      payload = { type: 'text', content: text };
+      payload = { type: 'text', text: text };
     } else if (tabType === 'mpp') {
       const fileInput = document.getElementById('importMppFile');
       if (!fileInput.files || fileInput.files.length === 0) { alert('请选择.mpp文件'); return; }
@@ -4552,6 +4567,26 @@ async function parseImportData() {
       if (!resp.ok) throw new Error('解析失败: ' + resp.status);
       const result = await resp.json();
       handleParseResult(result);
+      return;
+    } else if (tabType === 'pdf') {
+      const fileInput = document.getElementById('importPdfFile');
+      if (!fileInput.files || fileInput.files.length === 0) { alert('请选择PDF文件'); return; }
+      const file = fileInput.files[0];
+      // 读取文件为base64
+      const reader = new FileReader();
+      reader.onload = async function(e) {
+        const base64 = e.target.result.split(',')[1];  // 去掉data:application/pdf;base64,前缀
+        const payload = { type: 'pdf', text: base64, filename: file.name };
+        const resp = await fetch('/api/import/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) throw new Error('解析失败: ' + resp.status);
+        const result = await resp.json();
+        handleParseResult(result);
+      };
+      reader.readAsDataURL(file);
       return;
     } else if (tabType === 'screenshot') {
       alert('OCR功能暂不可用');
