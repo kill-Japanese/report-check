@@ -4640,7 +4640,31 @@ function handleParseResult(result) {
     '资源名称': r['资源名称'] || r['负责人'] || r['resource'] || r['name'] || '',
     '资源开始时间': r['资源开始时间'] || r['开始时间'] || r['start'] || '',
     '资源结束时间': r['资源结束时间'] || r['结束时间'] || r['end'] || '',
-    '日平均工时': parseFloat(r['日平均工时'] || r['工时'] || r['hours'] || 8)
+    '日平均工时': (function() {
+      const v = r['日平均工时'];
+      if (v !== undefined && v !== null && v !== '' && !isNaN(parseFloat(v))) {
+        return parseFloat(v);
+      }
+      // 后端未提供时，用工时自动计算（总工时÷工作日数）
+      const work = parseFloat(r['工时'] || r['hours'] || 0);
+      if (work > 0) {
+        const s = r['开始时间'] || r['资源开始时间'] || '';
+        const e = r['结束时间'] || r['资源结束时间'] || '';
+        if (s && e) {
+          // 粗略计算工作日（排除周末）
+          let days = 0;
+          const sd = new Date(s);
+          const ed = new Date(e);
+          if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) {
+            for (let d = new Date(sd); d <= ed; d.setDate(d.getDate() + 1)) {
+              if (d.getDay() !== 0 && d.getDay() !== 6) days++;
+            }
+          }
+          if (days > 0) return Math.round(work / days * 10) / 10;
+        }
+      }
+      return work > 0 ? work : 8;  // 兜底
+    })()
   }));
   
   // 显示警告
