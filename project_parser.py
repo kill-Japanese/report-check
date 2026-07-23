@@ -567,6 +567,62 @@ def parse_pdf(pdf_path):
             'resources': []
         }
     
+    def _is_gray_color(color):
+        """判断颜色是否为灰色（RGB各分量接近相等，且亮度低于阈值）
+        返回 True 表示是灰色/浅色文字，应被过滤
+        """
+        if not color:
+            return False  # 无颜色信息，不过滤（默认黑色）
+        try:
+            # color 通常是元组，如 (0.7, 0.7, 0.7) 或 CMYK (0, 0, 0, 0.3)
+            if isinstance(color, (list, tuple)):
+                if len(color) == 3:
+                    # RGB: 灰色 = R ≈ G ≈ B，且值不在黑色范围(0~0.3)内
+                    r, g, b = color
+                    if r < 0 and g < 0 and b < 0:
+                        return False  # 负值通常是特殊标记
+                    # 判断灰度：RGB差值都很小
+                    diff = max(r, g, b) - min(r, g, b)
+                    avg = (r + g + b) / 3
+                    if diff < 0.15 and avg > 0.3:
+                        return True  # 明显的灰色
+                    # 很浅的颜色（接近白色）
+                    if avg > 0.85:
+                        return True
+                    return False
+                elif len(color) == 4:
+                    # CMYK: 灰色 = C≈M≈Y≈0, K较高
+                    c, m, y, k = color
+                    if c < 0.1 and m < 0.1 and y < 0.1 and k > 0.15:
+                        return True
+                    return False
+                elif len(color) == 1:
+                    # 灰度值: 0=黑, 1=白
+                    v = color[0]
+                    if 0.3 < v < 1.0:
+                        return True
+                    return False
+        except:
+            pass
+        return False
+    
+    def _build_gray_char_regions(page):
+        """收集页面上所有灰色字体字符的坐标区域，返回用于后续过滤的矩形列表
+        每个矩形用 (x0, y0, x1, y1) 表示，带少许扩展容差
+        """
+        gray_regions = []
+        try:
+            chars = page.chars
+            if not chars:
+                return gray_regions
+            for ch in chars:
+                color = ch.get('non_stroking_color')
+                if _is_gray_color(color):
+                    gray_regions.append((ch['x0'], ch['top'], ch['x1'], ch['bottom']))
+        except Exception as e:
+            print(f'[PDF] 收集灰色字符区域失败: {e}')
+        return gray_regions
+    
     try:
         all_tasks = []
         debug_info = []
@@ -574,6 +630,30 @@ def parse_pdf(pdf_path):
         with pdfplumber.open(pdf_path) as pdf:
             debug_info.append(f'PDF共{len(pdf.pages)}页')
             for page_idx, page in enumerate(pdf.pages):
+                # 【新增】收集灰色字体字符区域，用于过滤干扰文字
+                gray_char_cache = _build_gray_char_regions(page)
+                gray_filtered = False
+                if gray_char_cache:
+                    debug_info.append(f'第{page_idx+1}页: 检测到{len(gray_char_cache)}个灰色字符，尝试过滤')
+                    # 过滤 page.chars：排除灰色字符
+                    try:
+                        original_chars = page.chars
+                        filtered_chars = [
+                            ch for ch in original_chars
+                            if not _is_gray_color(ch.get('non_stroking_color'))
+                        ]
+                        if len(filtered_chars) < len(original_chars):
+                            removed_count = len(original_chars) - len(filtered_chars)
+                            debug_info.append(f'第{page_idx+1}页: 已过滤{removed_count}个灰色字符，剩余{len(filtered_chars)}个字符')
+                            # 替换 page 的 chars 缓存，后续 extract_tables 将使用过滤后的字符
+                            page._chars = filtered_chars
+                            page.flush_cache()
+                            gray_filtered = True
+                        else:
+                            debug_info.append(f'第{page_idx+1}页: 灰色字符过滤未生效（可能颜色格式不匹配）')
+                    except Exception as e:
+                        debug_info.append(f'第{page_idx+1}页: 灰色字符过滤失败: {e}')
+                
                 # 尝试多种表格提取策略
                 all_tables_attempts = []
                 
@@ -697,6 +777,55 @@ def parse_pdf(pdf_path):
                                     return True
                             return False
 
+                        def _strip_gantt_inline(text):
+                            """移除插入在文字中间的甘特图噪音
+                            PDF甘特图标签可能与任务名称文字重叠，导致标签字符插入到名称中间。
+                            例如：
+                              固件概要设计000评审 → 固件概要设计评审
+                              内测/单元888测试 → 内测/单元测试
+                              可生产性评000估 → 可生产性评估
+                              固件测试问题修CCC改 → 固件测试问题修改
+                              生产工艺及规22 111程制定 → 生产工艺及规程制定
+                              试流问题888整改 → 试流问题整改
+                              T样机可生产00性 → T样机可生产性
+                              硬件概要设计 ，，→ 硬件概要设计（末尾逗号）
+                              硬件测试问题修改::: → 硬件测试问题修改（末尾冒号）
+                              测试方案(000大纲）设计 → 测试方案(大纲）设计
+                            """
+                            if not text:
+                                return text
+                            result = text
+                            
+                            # 反复清理，直到没有更多变化
+                            for _ in range(10):
+                                new_result = result
+                                
+                                # 模式1: 纯重复数字(2+位)夹在中文之间 → 评000估 → 评估
+                                # 如：评000估、修CCC改、888测试
+                                new_result = re.sub(r'([\u4e00-\u9fa5])\d{2,}([\u4e00-\u9fa5])', r'\1\2', new_result)
+                                # 也处理数字+空格+数字的变体：规22 111程 → 规程
+                                new_result = re.sub(r'([\u4e00-\u9fa5])\s*\d{2,}\s*\d*\s*([\u4e00-\u9fa5])', r'\1\2', new_result)
+                                # 更通用的：中文+数字/空格混合串+中文 → 移除中间的数字空格
+                                new_result = re.sub(r'([\u4e00-\u9fa5])[\d\s]{2,}([\u4e00-\u9fa5])', r'\1\2', new_result)
+                                
+                                # 模式2: 纯重复大写字母(2+位)夹在中文之间 → 修CCC改
+                                new_result = re.sub(r'([\u4e00-\u9fa5])[A-Z]{2,}([\u4e00-\u9fa5])', r'\1\2', new_result)
+                                
+                                # 模式3: 数字夹在中文和括号之间 → 测试方案(000大纲）→ 测试方案(大纲）
+                                new_result = re.sub(r'([\(\（])\d{2,}([\u4e00-\u9fa5])', r'\1\2', new_result)
+                                new_result = re.sub(r'([\u4e00-\u9fa5])\d{2,}([\)\）])', r'\1\2', new_result)
+                                
+                                # 模式4: 中文后面紧跟纯数字(2+位)再紧跟中文/括号 → 可生产00性 → 可生产性
+                                # 注意：这会与模式1部分重叠，但模式1要求两端都是中文字符
+                                # 这里扩展到：中文+数字+中文/左括号
+                                new_result = re.sub(r'([\u4e00-\u9fa5])\d{2,}([\u4e00-\u9fa5（\(])', r'\1\2', new_result)
+                                
+                                if new_result == result:
+                                    break
+                                result = new_result
+                            
+                            return result.strip()
+                        
                         def _strip_gantt_suffix(text):
                             """移除任务名称开头和末尾的甘特图噪音"""
                             if not text:
@@ -714,6 +843,8 @@ def parse_pdf(pdf_path):
                                 new_result = re.sub(r'\d{2,}$', '', new_result)
                                 # 末尾直接跟的纯大写字母(2+)：文档CCC
                                 new_result = re.sub(r'[A-Z]{2,}$', '', new_result)
+                                # 末尾直接跟的中文标点符号(2+重复): ，，， :::
+                                new_result = re.sub(r'[，,。.：:；;、]{2,}$', '', new_result)
                                 if new_result == result:
                                     break
                                 result = new_result
@@ -920,7 +1051,9 @@ def parse_pdf(pdf_path):
                                 result = re.sub(r'^[\d，,.:：；;、\-_/\\|\s]+', '', result)
                                 # 3. 用专用函数移除末尾甘特图噪音（CCC ::、888 66等）
                                 result = _strip_gantt_suffix(result)
-                                # 4. TR行特殊处理：只保留 TR+数字/字母
+                                # 4. 用专用函数移除文字中间的甘特图噪音（000、888、CCC等）
+                                result = _strip_gantt_inline(result)
+                                # 5. TR行特殊处理：只保留 TR+数字/字母
                                 if re.match(r'^TR[\dA-Za-z]*', result, re.I):
                                     m = re.match(r'^(TR[\dA-Za-z]*)', result, re.I)
                                     if m:
