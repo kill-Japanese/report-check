@@ -215,6 +215,9 @@ def git_pull() -> tuple[bool, str]:
             push_ok, push_msg = git_push('启动时同步本地未推送数据')
             if not push_ok:
                 print(f'[sync] 警告: 本地变更推送失败（{push_msg[:60]}），将保留本地文件不被覆盖')
+                # 【关键修复】git pull 前完整备份Excel，防止本地新增行被覆盖
+                excel_backup = _backup_excel_file()
+                archive_flags = _backup_archive_deleted_flags()
                 # 推送失败，只拉取不覆盖关键文件
                 pull = subprocess.run(
                     ['git', 'pull', 'origin', 'main', '--no-edit', '--no-commit'],
@@ -223,6 +226,9 @@ def git_pull() -> tuple[bool, str]:
                 # 如果有冲突，取消合并（保留本地版本）
                 if pull.returncode != 0:
                     subprocess.run(['git', 'merge', '--abort'], capture_output=True, cwd=BASE_DIR, timeout=10)
+                # 【关键修复】git pull 后恢复Excel和归档标志
+                _restore_excel_file(excel_backup)
+                _restore_archive_deleted_flags(archive_flags)
                 return True, '（拉取成功；本地有未推送变更已保留）'
             print(f'[sync] 本地变更已推送: {push_msg[:60]}')
 
@@ -241,7 +247,10 @@ def git_pull() -> tuple[bool, str]:
                 if checkout.returncode == 0 and os.path.exists(fpath):
                     restored.append(f'{f}(新建)')
 
-        # 【关键修复】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
+        # 【关键修复1】git pull 前完整备份Excel，防止本地新增行被远程覆盖
+        excel_backup = _backup_excel_file()
+        
+        # 【关键修复2】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
         archive_flags = _backup_archive_deleted_flags()
         
         pull = subprocess.run(
@@ -249,7 +258,10 @@ def git_pull() -> tuple[bool, str]:
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         
-        # 【关键修复】git pull 后恢复归档/删除标志
+        # 【关键修复3】git pull 后恢复Excel（防止本地新增行被覆盖）
+        _restore_excel_file(excel_backup)
+        
+        # 【关键修复4】git pull 后恢复归档/删除标志
         _restore_archive_deleted_flags(archive_flags)
 
         msg_parts = ['拉取成功']
@@ -318,6 +330,100 @@ def _restore_archive_deleted_flags(flags: dict):
         wb.close()
     except Exception as e:
         print(f'[sync] 恢复归档标志失败: {e}')
+
+
+def _backup_excel_file() -> str:
+    """完整备份 Excel 文件（git pull 前调用，防止新增行被远程覆盖）
+    
+    Returns:
+        str: 备份文件路径，失败返回空字符串
+    """
+    import shutil
+    try:
+        if not os.path.exists(EXCEL_FILE):
+            return ''
+        backup_path = EXCEL_FILE + '.bak_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        shutil.copy2(EXCEL_FILE, backup_path)
+        # 获取原始文件行数用于对比
+        from openpyxl import load_workbook
+        wb = load_workbook(EXCEL_FILE, read_only=True)
+        ws = wb['任务计划表']
+        row_count = ws.max_row
+        wb.close()
+        print(f'[sync] 已完整备份Excel: {os.path.basename(backup_path)} ({row_count}行)')
+        return backup_path
+    except Exception as e:
+        print(f'[sync] Excel备份失败: {e}')
+        return ''
+
+
+def _restore_excel_file(backup_path: str) -> bool:
+    """从备份恢复 Excel 文件（git pull 后调用，确保本地变更不丢失）
+    
+    恢复策略：
+    - 备份文件行数 > 当前文件行数 → 恢复（说明本地有新增行被远程覆盖了）
+    - 备份文件行数 <= 当前文件行数 → 不恢复（远程可能有编辑或新增）
+    
+    Args:
+        backup_path: 备份文件路径
+    
+    Returns:
+        bool: 是否执行了恢复
+    """
+    import shutil
+    if not backup_path or not os.path.exists(backup_path):
+        return False
+    try:
+        from openpyxl import load_workbook
+        
+        # 获取备份文件行数
+        wb_bak = load_workbook(backup_path, read_only=True)
+        ws_bak = wb_bak['任务计划表']
+        bak_rows = ws_bak.max_row
+        wb_bak.close()
+        
+        # 获取当前文件行数
+        if not os.path.exists(EXCEL_FILE):
+            shutil.copy2(backup_path, EXCEL_FILE)
+            print(f'[sync] Excel不存在，已从备份恢复 ({bak_rows}行)')
+            return True
+            
+        wb_cur = load_workbook(EXCEL_FILE, read_only=True)
+        ws_cur = wb_cur['任务计划表']
+        cur_rows = ws_cur.max_row
+        wb_cur.close()
+        
+        # 关键：备份行数更多 → 说明本地有新增行被远程覆盖了，必须恢复
+        if bak_rows > cur_rows:
+            shutil.copy2(backup_path, EXCEL_FILE)
+            invalidate_projects_cache()
+            print(f'[sync] 检测到远程覆盖: 备份{bak_rows}行 > 当前{cur_rows}行，已从备份恢复Excel')
+            # 清理备份文件
+            try:
+                os.remove(backup_path)
+            except:
+                pass
+            return True
+        else:
+            print(f'[sync] 无需恢复: 备份{bak_rows}行 <= 当前{cur_rows}行，保留远程版本')
+            # 清理备份文件
+            try:
+                os.remove(backup_path)
+            except:
+                pass
+            return False
+    except Exception as e:
+        print(f'[sync] Excel恢复失败: {e}')
+        # 出错时保守处理：尝试恢复（以防数据丢失）
+        try:
+            if os.path.exists(backup_path):
+                shutil.copy2(backup_path, EXCEL_FILE)
+                invalidate_projects_cache()
+                print(f'[sync] 异常恢复：已从备份还原Excel')
+                return True
+        except:
+            pass
+        return False
 
 
 # Git 可用性缓存（避免每次都检查 git --version）
@@ -398,7 +504,10 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
         # 撤销刚才的 commit（避免重复提交）
         subprocess.run(['git', 'reset', '--soft', 'HEAD~1'], capture_output=True, cwd=BASE_DIR, timeout=5)
         
-        # 【关键修复】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
+        # 【关键修复1】git pull 前完整备份Excel，防止新增行被远程覆盖
+        excel_backup = _backup_excel_file()
+        
+        # 【关键修复2】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
         archive_flags = _backup_archive_deleted_flags()
         
         # fetch
@@ -413,7 +522,10 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         
-        # 【关键修复】git pull 后恢复归档/删除标志
+        # 【关键修复3】git pull 后恢复Excel（防止新增行被覆盖）
+        _restore_excel_file(excel_backup)
+        
+        # 【关键修复4】git pull 后恢复归档/删除标志
         _restore_archive_deleted_flags(archive_flags)
         if pull.returncode != 0:
             # 有冲突，回退到 GitHub API
