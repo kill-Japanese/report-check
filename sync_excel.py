@@ -2225,13 +2225,18 @@ def list_approvals(user, role, permissions):
         wb = load_workbook(EXCEL_FILE, data_only=True)
         ws = wb['任务计划表']
         
-        # 找项目名列（D列=3，或兼容其他列）
-        project_name_col = 3  # 默认D列
+        # 找项目名列（F列=5是项目名，同时兼容表头中的"项目"列）
+        project_name_col = 5  # 默认F列（与read_excel_projects一致）
         headers = [cell.value for cell in ws[1]]
-        for i, h in enumerate(headers):
-            if h and ('项目' in str(h) and '名' in str(h)):
-                project_name_col = i
-                break
+        headers2 = [cell.value for cell in ws[3]] if ws.max_row >= 3 else []  # 第3行可能也是表头
+        for search_row in [headers, headers2]:
+            for i, h in enumerate(search_row):
+                if h and ('项目' in str(h) and '名' in str(h)):
+                    project_name_col = i
+                    break
+            else:
+                continue
+            break
         
         # 预加载操作记录，用于匹配真实的操作ID
         all_ops = _load_operations_sheet()
@@ -2255,6 +2260,10 @@ def list_approvals(user, role, permissions):
                     return o.get('操作ID', '')
             return ''
         
+        # 预加载所有项目数据（用于正确获取项目名，处理合并单元格）
+        all_projects_for_name = read_excel_projects()
+        project_name_map = {p['id']: p.get('项目', '') for p in all_projects_for_name}
+        
         for row_num in range(2, ws.max_row + 1):
             status = ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1).value or ''
             if not status:
@@ -2272,7 +2281,12 @@ def list_approvals(user, role, permissions):
                 submit_time = parts[1] if len(parts) > 1 else ''
             
             project_id = row_num - 2
-            project_name = ws.cell(row=row_num, column=project_name_col + 1).value or f'项目{project_id}'
+            # 【关键修复】从预加载的项目数据中获取项目名（正确处理合并单元格）
+            project_name = project_name_map.get(project_id, '')
+            if not project_name:
+                # 兜底：直接读F列
+                raw_name = ws.cell(row=row_num, column=project_name_col + 1).value
+                project_name = str(raw_name) if raw_name else f'项目{project_id}'
             
             # 匹配真实的操作ID
             real_op_id = _find_op_id(project_id, op_type, submitter)
