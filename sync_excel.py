@@ -1677,11 +1677,21 @@ def _load_operations_sheet():
     operations = []
     headers = [cell.value for cell in ws[1]]
     
+    import json
     for row_idx in range(2, ws.max_row + 1):
         row_data = {}
         for col_idx, header in enumerate(headers):
             if header:
                 val = ws.cell(row=row_idx, column=col_idx + 1).value
+                # JSON字符串解析回list/dict（项目ID列表、项目名列表、变更前/后内容等）
+                if isinstance(val, str) and val:
+                    stripped = val.strip()
+                    if (stripped.startswith('[') and stripped.endswith(']')) or \
+                       (stripped.startswith('{') and stripped.endswith('}')):
+                        try:
+                            val = json.loads(stripped)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
                 row_data[header] = val
         if row_data.get('操作ID'):
             operations.append(row_data)

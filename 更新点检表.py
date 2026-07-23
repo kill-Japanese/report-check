@@ -1581,7 +1581,7 @@ async function loadApprovalPanel() {
           <strong>操作人：</strong>${r['操作人'] || '未知'}
         </div>
         <div style="color:#374151;font-size:13px;margin-bottom:4px">
-          <strong>项目：</strong>${(r['项目名列表'] || []).join('、') || '无'}
+          <strong>项目：</strong>${Array.isArray(r['项目名列表']) ? r['项目名列表'].join('、') : (r['项目名列表'] || '无')}
         </div>
         ${r['审批人'] ? `<div style="color:#374151;font-size:13px;margin-bottom:4px"><strong>审批人：</strong>${r['审批人']}${r['审批时间'] ? ' (' + r['审批时间'] + ')' : ''}</div>` : ''}
         ${canAct ? `
