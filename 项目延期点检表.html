@@ -4483,7 +4483,7 @@ async function submitImport() {
     const resp = await fetch('/api/import/commit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows: finalRows })
+      body: JSON.stringify({ projects: finalRows })
     });
     
     if (!resp.ok) throw new Error('导入失败: ' + resp.status);
