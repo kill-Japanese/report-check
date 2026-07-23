@@ -1333,6 +1333,22 @@ def action_add_project(project_data: dict, operator: str = 'unknown') -> tuple[b
         wb.save(EXCEL_FILE)
         invalidate_projects_cache()
         
+        # 【双重保护】同时写入协作数据 newProjects，防止Excel被覆盖时数据丢失
+        try:
+            collab = load_collab_data()
+            existing_ids = {p.get('id') for p in collab.get('newProjects', [])}
+            if new_id not in existing_ids:
+                all_projects = read_excel_projects()
+                for p in all_projects:
+                    if p['id'] == new_id:
+                        collab.setdefault('newProjects', []).append(p)
+                        break
+                collab['lastUpdate'] = datetime.now().isoformat()
+                save_collab_data(collab)
+                print(f'[新增项目] 已写入ID={new_id}到协作数据（双重保护）')
+        except Exception as e:
+            print(f'[新增项目] 写入协作数据失败（不影响Excel写入）: {e}')
+        
         # 【关键】Excel 已写入成功！报表+推送放到后台线程，不阻塞HTTP响应
         messages = [f'新增成功(ID={new_id})']
         commit_msg = f'{operator}新增项目: {project_data.get("项目", "")}'
