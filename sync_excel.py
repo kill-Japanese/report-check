@@ -1428,6 +1428,135 @@ def action_delete_project(project_id: int, operator: str = 'unknown') -> tuple[b
     except Exception as e:
         return False, f'删除失败: {str(e)}'
 
+# ========== 批量操作（一次打开Excel，处理所有ID，保存一次） ==========
+
+def action_batch_archive(project_ids: list, operator: str = 'unknown') -> dict:
+    """批量归档项目：一次打开Excel，标记所有ID为已归档，保存一次
+    
+    Args:
+        project_ids: 项目ID列表
+        operator: 操作人
+    
+    Returns:
+        dict: {success, total, done, errors, message}
+    """
+    result = {'success': False, 'total': len(project_ids), 'done': 0, 'errors': []}
+    if not project_ids:
+        result['message'] = '没有要归档的项目'
+        return result
+    try:
+        from openpyxl import load_workbook
+        if not os.path.exists(EXCEL_FILE):
+            result['message'] = 'Excel 文件不存在'
+            return result
+        wb = load_workbook(EXCEL_FILE)
+        ws = wb['任务计划表']
+        done_ids = []
+        for pid in project_ids:
+            try:
+                row_num = int(pid) + 1
+                if 1 <= row_num <= ws.max_row:
+                    ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='已归档')
+                    done_ids.append(pid)
+                    result['done'] += 1
+                else:
+                    result['errors'].append(f'ID={pid} 超出范围')
+            except Exception as e:
+                result['errors'].append(f'ID={pid}: {str(e)}')
+        if result['done'] > 0:
+            wb.save(EXCEL_FILE)
+            invalidate_projects_cache()
+            result['success'] = True
+            commit_msg = f'{operator}批量归档{result["done"]}个项目'
+            thread = threading.Thread(target=_background_report_and_push, args=(commit_msg,), daemon=True)
+            thread.start()
+            result['message'] = f'成功归档 {result["done"]}/{result["total"]} 个项目（报表和同步正在后台执行）'
+        else:
+            result['message'] = '没有项目被成功归档'
+        return result
+    except Exception as e:
+        result['message'] = f'批量归档失败: {str(e)}'
+        result['errors'].append(str(e))
+        return result
+
+def action_batch_unarchive(project_ids: list, operator: str = 'unknown') -> dict:
+    """批量恢复归档项目：一次打开Excel，清空所有ID的归档标记，保存一次"""
+    result = {'success': False, 'total': len(project_ids), 'done': 0, 'errors': []}
+    if not project_ids:
+        result['message'] = '没有要恢复的项目'
+        return result
+    try:
+        from openpyxl import load_workbook
+        if not os.path.exists(EXCEL_FILE):
+            result['message'] = 'Excel 文件不存在'
+            return result
+        wb = load_workbook(EXCEL_FILE)
+        ws = wb['任务计划表']
+        for pid in project_ids:
+            try:
+                row_num = int(pid) + 1
+                if 1 <= row_num <= ws.max_row:
+                    ws.cell(row=row_num, column=COL_ARCHIVED + 1, value='')
+                    result['done'] += 1
+                else:
+                    result['errors'].append(f'ID={pid} 超出范围')
+            except Exception as e:
+                result['errors'].append(f'ID={pid}: {str(e)}')
+        if result['done'] > 0:
+            wb.save(EXCEL_FILE)
+            invalidate_projects_cache()
+            result['success'] = True
+            commit_msg = f'{operator}批量恢复{result["done"]}个项目归档'
+            thread = threading.Thread(target=_background_report_and_push, args=(commit_msg,), daemon=True)
+            thread.start()
+            result['message'] = f'成功恢复 {result["done"]}/{result["total"]} 个项目（报表和同步正在后台执行）'
+        else:
+            result['message'] = '没有项目被成功恢复'
+        return result
+    except Exception as e:
+        result['message'] = f'批量恢复失败: {str(e)}'
+        result['errors'].append(str(e))
+        return result
+
+def action_batch_delete(project_ids: list, operator: str = 'unknown') -> dict:
+    """批量删除项目：一次打开Excel，标记所有ID为已删除，保存一次"""
+    result = {'success': False, 'total': len(project_ids), 'done': 0, 'errors': []}
+    if not project_ids:
+        result['message'] = '没有要删除的项目'
+        return result
+    try:
+        from openpyxl import load_workbook
+        if not os.path.exists(EXCEL_FILE):
+            result['message'] = 'Excel 文件不存在'
+            return result
+        wb = load_workbook(EXCEL_FILE)
+        ws = wb['任务计划表']
+        for pid in project_ids:
+            try:
+                row_num = int(pid) + 1
+                if 1 <= row_num <= ws.max_row:
+                    _safe_write_cell(ws, row_num, COL_DELETED + 1, '已删除')
+                    result['done'] += 1
+                else:
+                    result['errors'].append(f'ID={pid} 超出范围')
+            except Exception as e:
+                result['errors'].append(f'ID={pid}: {str(e)}')
+        if result['done'] > 0:
+            wb.save(EXCEL_FILE)
+            invalidate_projects_cache()
+            result['success'] = True
+            commit_msg = f'{operator}批量删除{result["done"]}个项目'
+            thread = threading.Thread(target=_background_report_and_push, args=(commit_msg,), daemon=True)
+            thread.start()
+            result['message'] = f'成功删除 {result["done"]}/{result["total"]} 个项目（报表和同步正在后台执行）'
+        else:
+            result['message'] = '没有项目被成功删除'
+        return result
+    except Exception as e:
+        result['message'] = f'批量删除失败: {str(e)}'
+        result['errors'].append(str(e))
+        return result
+
 def action_archive_project(project_id: int, operator: str = 'unknown') -> tuple[bool, str]:
     """【简化方案】归档项目：A列标记"已归档" """
     wb, row_num = _find_row_for_project_id(project_id)

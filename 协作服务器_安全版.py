@@ -1484,6 +1484,39 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': ok, 'message': msg})
             return
 
+        # --- 批量归档（需 edit 权限）---
+        if path == '/api/action/batch-archive':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            ids = data.get('ids', [])
+            result = sync_excel.action_batch_archive(ids, user['username'])
+            auth._audit_log('PROJECT_BATCH_ARCHIVE', user['username'], f'{result.get("done",0)}/{result.get("total",0)}个')
+            self.send_json(result)
+            return
+
+        # --- 批量恢复归档（需 edit 权限）---
+        if path == '/api/action/batch-unarchive':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            ids = data.get('ids', [])
+            result = sync_excel.action_batch_unarchive(ids, user['username'])
+            auth._audit_log('PROJECT_BATCH_UNARCHIVE', user['username'], f'{result.get("done",0)}/{result.get("total",0)}个')
+            self.send_json(result)
+            return
+
+        # --- 批量删除（需 edit 权限）---
+        if path == '/api/action/batch-delete':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            ids = data.get('ids', [])
+            result = sync_excel.action_batch_delete(ids, user['username'])
+            auth._audit_log('PROJECT_BATCH_DELETE', user['username'], f'{result.get("done",0)}/{result.get("total",0)}个')
+            self.send_json(result)
+            return
+
         # --- 编辑项目（需 edit 权限）---
         if path == '/api/action/edit':
             if not self.require_permission('edit'):
