@@ -1,8 +1,27 @@
 {
   "localEdits": {},
   "notes": {},
-  "checked": {},
-  "archived": {},
+  "checked": {
+    "94": true,
+    "95": true,
+    "96": true,
+    "97": true,
+    "98": true,
+    "108": true,
+    "109": true,
+    "110": true,
+    "112": true
+  },
+  "archived": {
+    "74": {
+      "time": "2026-07-21T03:51:29.826Z",
+      "project": "TEST WEB"
+    },
+    "82": {
+      "time": "2026-07-21T06:21:42.344Z",
+      "project": "TEST WEB"
+    }
+  },
   "customEmails": {
     "刘璠": "fan.liu@hxgroup.com",
     "张丹": "dan.zhang@hxgroup.com",
@@ -12,6 +31,19 @@
     "魏殷浩": "yinhao.wei@hxgroup.com"
   },
   "newProjects": [],
-  "deletedIds": [],
-  "lastUpdate": "2026-07-23T02:15:58.002667"
+  "deletedIds": [
+    81,
+    80,
+    79,
+    89,
+    90,
+    87,
+    105,
+    106,
+    107,
+    91,
+    92,
+    93
+  ],
+  "lastUpdate": "1784772972705"
 }
