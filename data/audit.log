@@ -149,7 +149,8 @@
 [2026-07-21 14:25:46] LOGIN | 用户: xjq | 登录成功
 [2026-07-21 14:26:15] DATA_SYNC | 用户: admin | 数据同步更新
 [2026-07-21 14:30:01] USER_CREATE | 用户: admin | 创建用户: yjl, 角色: editor
-[2026-07-23 06:49:55] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
-[2026-07-23 06:52:53] LOGIN | 用户: xjq | 登录成功
-[2026-07-23 06:53:21] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
-[2026-07-23 06:53:47] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
+[2026-07-23 06:56:41] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-07-23 06:57:04] LOGIN | 用户: xjq | 登录成功
+[2026-07-23 06:57:28] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
+[2026-07-23 06:57:39] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
+[2026-07-23 06:57:45] DATA_SYNC | 用户: xjq | 数据同步更新
