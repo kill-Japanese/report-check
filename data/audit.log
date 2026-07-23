@@ -156,3 +156,6 @@
 [2026-07-23 02:39:20] PROJECT_BATCH_ARCHIVE | 用户: xjq | 22/22个
 [2026-07-23 02:39:25] DATA_SYNC | 用户: xjq | 数据同步更新
 [2026-07-23 02:40:06] PROJECT_BATCH_DELETE | 用户: xjq | 22/22个
+[2026-07-23 02:40:11] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-23 02:40:42] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
+[2026-07-23 02:41:00] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
