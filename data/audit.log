@@ -154,3 +154,7 @@
 [2026-07-23 10:51:13] LOGIN | 用户: mwh | 登录成功
 [2026-07-23 10:52:17] LOGIN | 用户: xjq | 登录成功
 [2026-07-23 10:52:47] APPROVAL_REJECT | 用户: xjq | ROW-50: 审批已拒绝
+[2026-07-23 10:53:46] APPROVAL_REJECT | 用户: xjq | ROW-154: 审批已拒绝
+[2026-07-23 10:54:01] APPROVAL_REJECT | 用户: xjq | ROW-158: 审批已拒绝
+[2026-07-23 10:55:08] APPROVAL_SUBMIT | 用户: xjq | OP-20260723-019: archive
+[2026-07-23 10:55:59] APPROVAL_CANCEL | 用户: xjq | OP-20260723-019: 撤回审批申请
