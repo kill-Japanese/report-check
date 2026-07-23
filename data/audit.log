@@ -149,25 +149,7 @@
 [2026-07-21 14:25:46] LOGIN | 用户: xjq | 登录成功
 [2026-07-21 14:26:15] DATA_SYNC | 用户: admin | 数据同步更新
 [2026-07-21 14:30:01] USER_CREATE | 用户: admin | 创建用户: yjl, 角色: editor
-[2026-07-23 06:24:06] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
-[2026-07-23 06:24:30] LOGIN | 用户: zky | 登录成功
-[2026-07-23 06:24:46] APPROVAL_CANCEL | 用户: zky | OP-20260723-002: 撤回审批申请
-[2026-07-23 06:25:44] APPROVAL_SUBMIT | 用户: zky | OP-20260723-005: archive
-[2026-07-23 06:26:54] LOGIN | 用户: lhl | 登录成功
-[2026-07-23 06:27:19] APPROVAL_SUBMIT | 用户: lhl | OP-20260723-006: archive
-[2026-07-23 06:27:36] LOGIN | 用户: zky | 登录成功
-[2026-07-23 06:28:00] LOGIN | 用户: xjq | 登录成功
-[2026-07-23 06:28:26] APPROVAL_APPROVE | 用户: xjq | OP-20260723-006: 审批通过，操作已生效: 归档项目成功; ID=54; （报表和同步正在后台执行）
-[2026-07-23 06:28:37] APPROVAL_REJECT | 用户: xjq | OP-20260723-005: 审批已拒绝
-[2026-07-23 06:28:49] PROJECT_DELETE | 用户: xjq | ID=87: 删除项目成功; ID=87; （报表和同步正在后台执行）
-[2026-07-23 06:28:54] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-23 06:28:55] PROJECT_UNARCHIVE | 用户: xjq | ID=54: 项目ID=54 不存在
-[2026-07-23 06:29:17] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
-[2026-07-23 06:29:19] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
-[2026-07-23 06:29:36] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
-[2026-07-23 06:29:43] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-23 06:29:50] PROJECT_UNARCHIVE | 用户: xjq | ID=54: 取消归档项目成功; ID=54; （报表和同步正在后台执行）
-[2026-07-23 06:29:54] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-23 06:30:41] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
-[2026-07-23 06:30:54] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
-[2026-07-23 06:30:58] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-23 06:49:55] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-07-23 06:52:53] LOGIN | 用户: xjq | 登录成功
+[2026-07-23 06:53:21] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
+[2026-07-23 06:53:47] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
