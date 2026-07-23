@@ -369,7 +369,9 @@ def _resolve_ancestors(tasks):
             current = current.get('parent')
 
 def _extract_resources(tasks):
-    """从任务中提取资源（应用过滤规则）"""
+    """从任务中提取资源（应用过滤规则）
+    注意：按SKILL.MD规范，工时列直接存储日平均工时（h/天），不需要再做转换
+    """
     resources = []
     
     for t in tasks:
@@ -384,11 +386,9 @@ def _extract_resources(tasks):
         # 资源名称 = 责任人优先，否则用任务名
         res_name = t['owner'] if t['owner'] else t['name']
         
-        # 计算日平均工时
-        workdays = _get_workdays(t['start'], t['end'])
-        daily_hours = 0
-        if t['work'] > 0 and workdays > 0:
-            daily_hours = round(t['work'] / workdays, 1)
+        # 按SKILL.MD规范：工时列直接就是日平均工时（h/天），不再计算
+        # 日平均工时 = 工时列的值（四舍五入到1位小数）
+        daily_hours = round(float(t['work']), 1) if t['work'] else 0
         
         resource = {
             '项目名称': t['project_name'] if t['project_name'] else '/',
@@ -397,8 +397,8 @@ def _extract_resources(tasks):
             '资源名称': res_name,
             '开始时间': t['start'] if t['start'] else '1900-01-01',
             '结束时间': t['end'] if t['end'] else '2100-01-01',
-            '工时': t['work'],
-            '日平均工时': daily_hours,
+            '工时': t['work'],  # 日平均工时（与日平均工时字段值一致）
+            '日平均工时': daily_hours,  # 直接等于工时列
             'is_unresolved_tr': t['tr_name'] is None,
             'is_unresolved_project': t['project_name'] is None,
             'warnings': []
@@ -458,11 +458,9 @@ def _merge_design_review(resources):
                         merged = dict(review)  # 以评审为基础（资源类型用评审的）
                         merged['开始时间'] = min(design['开始时间'], review['开始时间'])  # 取最早
                         merged['结束时间'] = max(design['结束时间'], review['结束时间'])  # 取最晚
-                        merged['工时'] = max(design['工时'], review['工时'])  # 取较长工时
-                        # 重新计算日平均工时
-                        workdays = _get_workdays(merged['开始时间'], merged['结束时间'])
-                        if merged['工时'] > 0 and workdays > 0:
-                            merged['日平均工时'] = round(merged['工时'] / workdays, 1)
+                        merged['工时'] = max(design['工时'], review['工时'])  # 取较大的日平均工时
+                        # 按SKILL.MD规范：日平均工时直接等于工时列（不再除以工作日数）
+                        merged['日平均工时'] = merged['工时']
                         merged['warnings'] = list(set(design.get('warnings', []) + review.get('warnings', [])))
                         merged['is_unresolved_tr'] = design.get('is_unresolved_tr', False) or review.get('is_unresolved_tr', False)
                         merged['is_unresolved_project'] = design.get('is_unresolved_project', False) or review.get('is_unresolved_project', False)
