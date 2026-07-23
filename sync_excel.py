@@ -2168,34 +2168,48 @@ def approve_operation(op_id, approver, comment=''):
 
 
 def reject_operation(op_id, approver, comment=''):
-    """拒绝审批（简化版）"""
+    """拒绝审批（简化版）
+    
+    支持两种操作ID：
+    - OP-YYYYMMDD-NNN：从操作记录查找
+    - ROW-{project_id}：从任务计划表查找（兜底）
+    """
     from datetime import datetime
     try:
         ops = _load_operations_sheet()
         op = next((o for o in ops if o.get('操作ID') == op_id), None)
-        if not op:
+        
+        if op:
+            # 正常流程：从操作记录找到
+            if op.get('状态') != 'pending':
+                return False, f'该操作状态不是待审批: {op.get("状态")}'
+            
+            import json
+            project_ids = op.get('项目ID列表', [])
+            if isinstance(project_ids, str):
+                project_ids = json.loads(project_ids)
+            op_type = op.get('操作类型', '')
+            
+            # 清除任务计划表的审批列（add操作不需要）
+            if op_type != 'add':
+                for pid in project_ids:
+                    _write_approval_row(pid, '', '', '', '')
+            
+            # 更新操作记录
+            _update_operation(op_id, {
+                '状态': 'rejected',
+                '审批人': approver,
+                '审批时间': datetime.now().isoformat(),
+                '变更后内容': {'拒绝原因': comment} if comment else {},
+            })
+        elif op_id.startswith('ROW-'):
+            # 【兜底】操作记录中没有，但任务计划表有审批信息
+            project_id = int(op_id.replace('ROW-', ''))
+            # 直接清除审批列
+            _write_approval_row(project_id, '', '', '', '')
+            print(f'[拒绝] 兜底处理 ROW-{project_id}, 已清除审批列')
+        else:
             return False, f'操作记录不存在: {op_id}'
-        if op.get('状态') != 'pending':
-            return False, f'该操作状态不是待审批: {op.get("状态")}'
-        
-        import json
-        project_ids = op.get('项目ID列表', [])
-        if isinstance(project_ids, str):
-            project_ids = json.loads(project_ids)
-        op_type = op.get('操作类型', '')
-        
-        # 清除任务计划表的审批列（add操作不需要）
-        if op_type != 'add':
-            for pid in project_ids:
-                _write_approval_row(pid, '', '', '', '')
-        
-        # 更新操作记录
-        _update_operation(op_id, {
-            '状态': 'rejected',
-            '审批人': approver,
-            '审批时间': datetime.now().isoformat(),
-            '变更后内容': {'拒绝原因': comment} if comment else {},
-        })
         
         # 【关键修复】拒绝后必须推送到GitHub，否则Render重新部署会从旧数据恢复
         import threading
@@ -2208,35 +2222,67 @@ def reject_operation(op_id, approver, comment=''):
 
 
 def cancel_operation(op_id, operator):
-    """撤回审批申请（简化版）"""
+    """撤回审批申请（简化版）
+    
+    支持两种操作ID：
+    - OP-YYYYMMDD-NNN：从操作记录查找
+    - ROW-{project_id}：从任务计划表查找（兜底，操作记录匹配失败时使用）
+    """
     from datetime import datetime
     try:
         ops = _load_operations_sheet()
         op = next((o for o in ops if o.get('操作ID') == op_id), None)
-        if not op:
+        
+        if op:
+            # 正常流程：从操作记录找到
+            if op.get('操作人') != operator:
+                return False, '仅申请人本人可撤回'
+            if op.get('状态') != 'pending':
+                return False, f'该操作状态不是待审批，无法撤回（当前状态: {op.get("状态")}）'
+            
+            import json
+            project_ids = op.get('项目ID列表', [])
+            if isinstance(project_ids, str):
+                project_ids = json.loads(project_ids)
+            op_type = op.get('操作类型', '')
+            
+            # 清除任务计划表的审批列（add操作不需要）
+            if op_type != 'add':
+                for pid in project_ids:
+                    _write_approval_row(pid, '', '', '', '')
+            
+            # 更新操作记录
+            _update_operation(op_id, {
+                '状态': 'cancelled',
+                '审批人': operator,
+                '审批时间': datetime.now().isoformat(),
+            })
+        elif op_id.startswith('ROW-'):
+            # 【兜底】操作记录中没有，但任务计划表有审批信息（ROW-{project_id}格式）
+            project_id = int(op_id.replace('ROW-', ''))
+            from openpyxl import load_workbook
+            wb = load_workbook(EXCEL_FILE)
+            ws = wb['任务计划表']
+            row_num = project_id + 1
+            if not (2 <= row_num <= ws.max_row):
+                return False, f'项目行不存在: {op_id}'
+            
+            # 读取审批信息
+            submitter_raw = ws.cell(row=row_num, column=COL_APPROVAL_SUBMITTER + 1).value or ''
+            if not submitter_raw:
+                return False, f'该审批记录不存在或已被处理: {op_id}'
+            
+            submitter = submitter_raw.split('|')[0] if '|' in submitter_raw else submitter_raw
+            if submitter != operator:
+                return False, '仅申请人本人可撤回'
+            
+            # 清除审批列
+            _write_approval_row(project_id, '', '', '', '')
+            wb.save(EXCEL_FILE)
+            wb.close()
+            print(f'[撤回] 兜底处理 ROW-{project_id}, 已清除审批列')
+        else:
             return False, f'操作记录不存在: {op_id}'
-        if op.get('操作人') != operator:
-            return False, '仅申请人本人可撤回'
-        if op.get('状态') != 'pending':
-            return False, f'该操作状态不是待审批，无法撤回（当前状态: {op.get("状态")}）'
-        
-        import json
-        project_ids = op.get('项目ID列表', [])
-        if isinstance(project_ids, str):
-            project_ids = json.loads(project_ids)
-        op_type = op.get('操作类型', '')
-        
-        # 清除任务计划表的审批列（add操作不需要）
-        if op_type != 'add':
-            for pid in project_ids:
-                _write_approval_row(pid, '', '', '', '')
-        
-        # 更新操作记录
-        _update_operation(op_id, {
-            '状态': 'cancelled',
-            '审批人': operator,
-            '审批时间': datetime.now().isoformat(),
-        })
         
         auth._audit_log('APPROVAL_CANCEL', operator, f'{op_id}: 撤回审批申请')
         
