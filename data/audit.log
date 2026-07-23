@@ -162,3 +162,6 @@
 [2026-07-23 06:28:49] PROJECT_DELETE | 用户: xjq | ID=87: 删除项目成功; ID=87; （报表和同步正在后台执行）
 [2026-07-23 06:28:54] DATA_SYNC | 用户: xjq | 数据同步更新
 [2026-07-23 06:28:55] PROJECT_UNARCHIVE | 用户: xjq | ID=54: 项目ID=54 不存在
+[2026-07-23 06:29:17] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
+[2026-07-23 06:29:19] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
+[2026-07-23 06:29:36] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
