@@ -1465,6 +1465,24 @@ def action_add_project_batch(projects_data: list, operator: str = 'unknown') -> 
         wb.save(EXCEL_FILE)
         invalidate_projects_cache()
         
+        # 【双重保护】同时写入协作数据 newProjects，防止Excel被覆盖时数据丢失
+        # （git pull 或其他场景覆盖Excel后，full_sync 可从协作数据恢复这些项目）
+        if result['added'] > 0:
+            try:
+                collab = load_collab_data()
+                existing_ids = {p.get('id') for p in collab.get('newProjects', [])}
+                # 重新读取刚写入的项目，获取完整数据
+                all_projects = read_excel_projects()
+                added_ids_set = set(result['ids'])
+                for p in all_projects:
+                    if p['id'] in added_ids_set and p['id'] not in existing_ids:
+                        collab.setdefault('newProjects', []).append(p)
+                collab['lastUpdate'] = datetime.now().isoformat()
+                save_collab_data(collab)
+                print(f'[批量导入] 已写入{result["added"]}个项目到协作数据（双重保护）')
+            except Exception as e:
+                print(f'[批量导入] 写入协作数据失败（不影响Excel写入）: {e}')
+        
         result['success'] = True
         result['message'] = f'批量导入完成: 成功{result["added"]}条，跳过{result["skipped"]}条（共{result["total"]}条）'
         
