@@ -1449,15 +1449,26 @@ async function updateApprovalBadge() {
   const countEl = document.getElementById('approvalCount');
   if (!btn || !countEl) return;
   
-  // 有审批权的用户才显示审批按钮
-  if (canApprove()) {
+  // 所有登录用户都显示审批按钮（viewer也需要看"我发起的"）
+  if (collabIsEnabled()) {
     btn.style.display = '';
-    const count = await getApprovalCount();
-    if (count > 0) {
-      countEl.textContent = count;
-      countEl.style.display = '';
-    } else {
-      countEl.style.display = 'none';
+    // 修改按钮文字：有审批权的显示"待审批"，其他显示"我的审批"
+    btn.innerHTML = canApprove() 
+      ? '🔔 待审批<span id="approvalCount" style="background:#ef4444;color:white;border-radius:10px;padding:0 6px;font-size:11px;margin-left:4px;display:none">0</span>'
+      : '📋 我的审批';
+    
+    // 只有有审批权的用户才显示红点数量
+    if (canApprove()) {
+      const count = await getApprovalCount();
+      const newCountEl = document.getElementById('approvalCount');
+      if (newCountEl) {
+        if (count > 0) {
+          newCountEl.textContent = count;
+          newCountEl.style.display = '';
+        } else {
+          newCountEl.style.display = 'none';
+        }
+      }
     }
   } else {
     btn.style.display = 'none';
@@ -1478,7 +1489,7 @@ function openApprovalPanel() {
       <h3>🔔 审批管理</h3>
       
       <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e5e7eb">
-        <button id="approvalTabPending" class="approval-tab-btn" onclick="switchApprovalTab('pending')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid #f59e0b;color:#f59e0b;font-weight:600">⏳ 待我审批</button>
+        <button id="approvalTabPending" class="approval-tab-btn" onclick="switchApprovalTab('pending')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid #f59e0b;color:#f59e0b;font-weight:600;${canApprove() ? '' : 'display:none'}">⏳ 待我审批</button>
         <button id="approvalTabMine" class="approval-tab-btn" onclick="switchApprovalTab('mine')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📝 我发起的</button>
         <button id="approvalTabAll" class="approval-tab-btn" onclick="switchApprovalTab('all')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📋 全部记录</button>
       </div>
@@ -1489,7 +1500,8 @@ function openApprovalPanel() {
     </div>
   `;
   document.body.appendChild(modal);
-  switchApprovalTab('pending');
+  // viewer默认跳转到"我发起的"
+  switchApprovalTab(canApprove() ? 'pending' : 'mine');
 }
 
 // 切换审批Tab

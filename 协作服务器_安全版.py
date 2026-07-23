@@ -1209,8 +1209,18 @@ window.CURRENT_USER = {user_info};
                 user.get('role', ''),
                 user.get('permissions', [])
             )
+            # list_approvals返回: {'pending_for_me': [], 'my_submissions': []}
+            # 合并所有记录
+            all_records = result.get('pending_for_me', []) + result.get('my_submissions', [])
+            # 去重（按操作ID）
+            seen = set()
+            records = []
+            for r in all_records:
+                rid = r.get('操作ID')
+                if rid and rid not in seen:
+                    seen.add(rid)
+                    records.append(r)
             # 按状态过滤
-            records = result.get('records', [])
             if status_filter == 'pending':
                 records = [r for r in records if r.get('状态') == 'pending']
             elif status_filter == 'mine':
