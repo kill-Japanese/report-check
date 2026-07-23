@@ -149,48 +149,11 @@
 [2026-07-21 14:25:46] LOGIN | 用户: xjq | 登录成功
 [2026-07-21 14:26:15] DATA_SYNC | 用户: admin | 数据同步更新
 [2026-07-21 14:30:01] USER_CREATE | 用户: admin | 创建用户: yjl, 角色: editor
-[2026-07-23 07:11:40] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
-[2026-07-23 07:12:38] LOGIN | 用户: xjq | 登录成功
-[2026-07-23 07:13:54] PROJECT_BATCH_DELETE | 用户: xjq | 28/28个
-[2026-07-23 07:14:02] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-23 07:14:39] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
-[2026-07-23 07:15:16] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
-[2026-07-23 07:15:53] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-23 07:16:36] USER_CREATE | 用户: admin | 创建用户: tjs, 角色: editor
-[2026-07-23 07:18:41] LOGIN | 用户: tjs | 登录成功
-[2026-07-23 07:19:47] LOGIN | 用户: tjs | 登录成功
-[2026-07-23 07:21:10] PROJECT_ADD | 用户: tjs | 新增成功(ID=161); （报表和同步正在后台执行）
-[2026-07-23 07:21:17] PROJECT_ADD | 用户: tjs | 新增成功(ID=162); （报表和同步正在后台执行）
-[2026-07-23 07:21:26] DATA_SYNC | 用户: tjs | 数据同步更新
-[2026-07-23 07:21:47] PROJECT_ARCHIVE | 用户: tjs | ID=162: 归档项目成功; ID=162; （报表和同步正在后台执行）
-[2026-07-23 07:21:53] DATA_SYNC | 用户: tjs | 数据同步更新
-[2026-07-23 07:22:29] DATA_SYNC | 用户: tjs | 数据同步更新
-[2026-07-23 07:26:47] DATA_SYNC | 用户: tjs | 数据同步更新
-[2026-07-23 07:27:05] DATA_SYNC | 用户: tjs | 数据同步更新
-[2026-07-23 07:27:11] DATA_SYNC | 用户: tjs | 数据同步更新
-[2026-07-23 07:28:31] LOGIN | 用户: xjq | 登录成功
-[2026-07-23 07:28:52] USER_CREATE | 用户: admin | 创建用户: mwh, 角色: viewer
-[2026-07-23 07:31:05] LOGIN | 用户: mwh | 登录成功
-[2026-07-23 07:38:33] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-23 07:48:03] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-23 07:48:35] SESSION_CLEANUP | 用户: system | 清理了 2 个过期 Session
-[2026-07-23 07:56:30] APPROVAL_SUBMIT | 用户: mwh | : edit
-[2026-07-23 07:56:31] APPROVAL_SUBMIT | 用户: mwh | : edit
-[2026-07-23 07:56:31] APPROVAL_SUBMIT | 用户: mwh | : edit
-[2026-07-23 07:56:31] APPROVAL_SUBMIT | 用户: mwh | : edit
-[2026-07-23 07:56:34] APPROVAL_SUBMIT | 用户: mwh | : edit
-[2026-07-23 07:56:34] APPROVAL_SUBMIT | 用户: mwh | : edit
-[2026-07-23 07:56:34] APPROVAL_SUBMIT | 用户: mwh | : edit
-[2026-07-23 07:56:34] APPROVAL_SUBMIT | 用户: mwh | : edit
-[2026-07-23 07:56:37] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-007: edit
-[2026-07-23 07:58:56] APPROVAL_SUBMIT | 用户: mwh | : edit
-[2026-07-23 07:58:56] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-008: edit
-[2026-07-23 07:59:32] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-009: edit
-[2026-07-23 08:03:11] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-010: archive
-[2026-07-23 08:03:16] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-011: archive
-[2026-07-23 08:16:00] LOGIN | 用户: xjq | 登录成功
-[2026-07-23 08:17:28] LOGIN | 用户: xjq | 登录成功
-[2026-07-23 08:17:45] LOGIN | 用户: mwh | 登录成功
-[2026-07-23 08:18:21] LOGIN | 用户: xjq | 登录成功
-[2026-07-23 08:20:42] APPROVAL_APPROVE | 用户: xjq | OP-20260723-011: 审批通过，操作已生效: 归档项目成功; ID=31; （报表和同步正在后台执行）
-[2026-07-23 08:20:49] PROJECT_UNARCHIVE | 用户: xjq | ID=162: 取消归档项目成功; ID=162; （报表和同步正在后台执行）
+[2026-07-23 09:02:20] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-07-23 09:02:47] LOGIN | 用户: xjq | 登录成功
+[2026-07-23 09:03:42] LOGIN | 用户: mwh | 登录成功
+[2026-07-23 09:05:00] LOGIN | 用户: xjq | 登录成功
+[2026-07-23 09:05:17] APPROVAL_APPROVE | 用户: xjq | OP-20260723-009: 审批失败: File is not a zip file
+[2026-07-23 09:05:27] APPROVAL_APPROVE | 用户: xjq | OP-20260723-007: 审批通过，操作已生效: 编辑项目成功; ID=152; （报表和同步正在后台执行）
+[2026-07-23 09:05:45] LOGIN | 用户: mwh | 登录成功
+[2026-07-23 09:06:34] LOGIN | 用户: xjq | 登录成功
