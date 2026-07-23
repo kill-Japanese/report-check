@@ -1196,9 +1196,9 @@ async function loadApprovalPanel() {
       '日平均工时': '日平均工时'
     };
     
-    // 生成变更内容HTML（edit和add类型都显示）
+    // 生成变更内容HTML（edit、add、archive类型都显示项目信息）
     let editChangesHtml = '';
-    if (r['操作类型'] === 'edit' || r['操作类型'] === 'add') {
+    if (r['操作类型'] === 'edit' || r['操作类型'] === 'add' || r['操作类型'] === 'archive' || r['操作类型'] === 'unarchive' || r['操作类型'] === 'batch_archive' || r['操作类型'] === 'batch_unarchive') {
       let beforeData = r['变更前内容'] || {};
       let afterData = r['变更后内容'] || {};
       // 处理JSON字符串
@@ -1206,6 +1206,7 @@ async function loadApprovalPanel() {
       if (typeof afterData === 'string') { try { afterData = JSON.parse(afterData); } catch(e) {} }
       
       // 【新增】项目基本信息区域（始终显示，不区分是否变化）
+      const isArchiveType = ['archive', 'unarchive', 'batch_archive', 'batch_unarchive'].includes(r['操作类型']);
       const infoFields = ['部门', '项目', '项目描述', '资源类型', '资源名称'];
       const infoValues = [];
       for (const key of infoFields) {
