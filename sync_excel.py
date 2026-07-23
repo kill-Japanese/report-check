@@ -2280,7 +2280,11 @@ def list_approvals(user, role, permissions):
                 submitter = parts[0]
                 submit_time = parts[1] if len(parts) > 1 else ''
             
-            project_id = row_num - 2
+            # 【关键修复】id 必须与 read_excel_projects() 一致
+            # read_excel_projects 中: enumerate(ws.iter_rows(min_row=4), start=3)
+            # 所以第4行 -> id=3, 第5行 -> id=4, ...
+            # 即 id = row_num - 1
+            project_id = row_num - 1
             # 【关键修复】从预加载的项目数据中获取项目名（正确处理合并单元格）
             project_name = project_name_map.get(project_id, '')
             if not project_name:
