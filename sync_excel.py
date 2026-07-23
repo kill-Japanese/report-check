@@ -29,6 +29,25 @@ HTML_FILE = os.path.join(BASE_DIR, '项目延期点检表.html')
 # 注意：openpyxl写入时使用 1-based 列号，所以 COL_ARCHIVED+1 = 第2列(B列)
 COL_ARCHIVED = 0   # 第1列(A列)用于存放归档标志（原U列/20，改为A列/0，避免覆盖公式）
 COL_DELETED = 1    # 第2列(B列)用于存放删除标志（原V列/21，改为B列/1，软删除避免合并单元格破坏）
+COL_APPROVAL_STATUS = 23  # 第24列(X列)用于存放审批状态标识（空=正常，PENDING_* = 待审批）
+
+# 操作记录Sheet配置
+OPERATIONS_SHEET = '操作记录'
+# 操作记录表头（A-L列，0-based索引对应列号-1）
+OPERATION_HEADERS = [
+    '操作ID',      # A列
+    '操作时间',     # B列
+    '操作人',       # C列
+    '操作类型',     # D列: archive/unarchive/edit/delete/batch_archive/batch_unarchive/approval_submit/approval_approve/approval_reject
+    '项目ID列表',   # E列: JSON数组
+    '项目名列表',   # F列: JSON数组
+    '变更前内容',   # G列: JSON对象（edit操作）
+    '变更后内容',   # H列: JSON对象（edit操作/审批意见）
+    '状态',         # I列: direct/pending/approved/rejected
+    '关联审批ID',   # J列
+    '审批人',       # K列
+    '审批时间',     # L列
+]
 
 # ==================== 项目数据缓存（解决502超时关键）====================
 # 【关键修复】每次请求都用pandas读Excel很慢（3-10秒），加缓存避免重复读取
@@ -1627,6 +1646,412 @@ def startup_sync() -> tuple[bool, str]:
     ok2, msg2 = regenerate_report()
     messages.append(msg2)
     return (ok and ok2), '；'.join(messages)
+
+# ==================== 审批系统 & 操作记录 ====================
+
+def _ensure_operations_sheet():
+    """确保「操作记录」Sheet存在，不存在则创建并写入表头"""
+    from openpyxl import load_workbook
+    wb = load_workbook(EXCEL_FILE)
+    if OPERATIONS_SHEET not in wb.sheetnames:
+        ws = wb.create_sheet(OPERATIONS_SHEET)
+        for col_idx, header in enumerate(OPERATION_HEADERS, 1):
+            ws.cell(row=1, column=col_idx, value=header)
+        wb.save(EXCEL_FILE)
+        print(f'[操作记录] 已创建Sheet: {OPERATIONS_SHEET}')
+    else:
+        wb.close()
+
+
+def _load_operations_sheet():
+    """读取操作记录Sheet为列表（直接读取Excel，无缓存）
+    
+    Returns:
+        list: 操作记录列表，每条为dict
+    """
+    _ensure_operations_sheet()
+    from openpyxl import load_workbook
+    wb = load_workbook(EXCEL_FILE, data_only=True)
+    ws = wb[OPERATIONS_SHEET]
+    
+    operations = []
+    headers = [cell.value for cell in ws[1]]
+    
+    for row_idx in range(2, ws.max_row + 1):
+        row_data = {}
+        for col_idx, header in enumerate(headers):
+            if header:
+                val = ws.cell(row=row_idx, column=col_idx + 1).value
+                row_data[header] = val
+        if row_data.get('操作ID'):
+            operations.append(row_data)
+    
+    wb.close()
+    # 按操作时间倒序（最新的在前）
+    operations.sort(key=lambda x: x.get('操作时间', ''), reverse=True)
+    return operations
+
+
+def _generate_op_id():
+    """生成操作ID: OP-YYYYMMDD-NNN"""
+    from datetime import datetime
+    today = datetime.now().strftime('%Y%m%d')
+    ops = _load_operations_sheet()
+    today_count = sum(1 for o in ops if o.get('操作ID', '').startswith(f'OP-{today}'))
+    return f'OP-{today}-{today_count + 1:03d}'
+
+
+def _append_operation(operation_data):
+    """追加一条操作记录到Excel
+    
+    Args:
+        operation_data: dict，键为OPERATION_HEADERS中的字段名
+    
+    Returns:
+        str: 操作ID
+    """
+    _ensure_operations_sheet()
+    from openpyxl import load_workbook
+    wb = load_workbook(EXCEL_FILE)
+    ws = wb[OPERATIONS_SHEET]
+    
+    # 确保有操作ID
+    if '操作ID' not in operation_data or not operation_data['操作ID']:
+        operation_data['操作ID'] = _generate_op_id()
+    
+    new_row = ws.max_row + 1
+    for col_idx, header in enumerate(OPERATION_HEADERS, 1):
+        val = operation_data.get(header, '')
+        # dict/list转JSON字符串
+        if isinstance(val, (dict, list)):
+            import json
+            val = json.dumps(val, ensure_ascii=False)
+        ws.cell(row=new_row, column=col_idx, value=val)
+    
+    wb.save(EXCEL_FILE)
+    wb.close()
+    print(f'[操作记录] 已追加: {operation_data["操作ID"]}')
+    return operation_data['操作ID']
+
+
+def _update_operation(op_id, updates):
+    """更新操作记录的字段
+    
+    Args:
+        op_id: 操作ID
+        updates: dict，要更新的字段
+    """
+    _ensure_operations_sheet()
+    from openpyxl import load_workbook
+    wb = load_workbook(EXCEL_FILE)
+    ws = wb[OPERATIONS_SHEET]
+    
+    headers = [cell.value for cell in ws[1]]
+    
+    for row_idx in range(2, ws.max_row + 1):
+        if ws.cell(row=row_idx, column=1).value == op_id:
+            for key, val in updates.items():
+                if key in headers:
+                    col_idx = headers.index(key) + 1
+                    if isinstance(val, (dict, list)):
+                        import json
+                        val = json.dumps(val, ensure_ascii=False)
+                    ws.cell(row=row_idx, column=col_idx, value=val)
+            break
+    
+    wb.save(EXCEL_FILE)
+    wb.close()
+    print(f'[操作记录] 已更新: {op_id}')
+
+
+def _set_approval_status(project_ids, status):
+    """批量设置X列审批状态
+    
+    Args:
+        project_ids: list，项目ID列表
+        status: str，审批状态值（PENDING_ARCHIVE/PENDING_UNARCHIVE/PENDING_EDIT）
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(EXCEL_FILE)
+    ws = wb['任务计划表']
+    
+    for pid in project_ids:
+        try:
+            row_num = int(pid) + 2  # id从0开始，第1行是表头，id=0对应第2行
+            if 2 <= row_num <= ws.max_row:
+                ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1, value=status)
+        except Exception as e:
+            print(f'[审批] 设置ID={pid}状态失败: {e}')
+    
+    wb.save(EXCEL_FILE)
+    wb.close()
+    invalidate_projects_cache()
+
+
+def _clear_approval_status(project_ids):
+    """批量清空X列审批状态"""
+    _set_approval_status(project_ids, '')
+
+
+def submit_approval(approval_data, operator):
+    """提交审批申请
+    
+    Args:
+        approval_data: dict，包含：
+            - operation_type: 操作类型 (archive/unarchive/edit/batch_archive/batch_unarchive)
+            - project_ids: 项目ID列表
+            - project_names: 项目名列表
+            - before_data: 变更前内容（edit操作）
+            - after_data: 变更后内容（edit操作）
+        operator: 操作人用户名
+    
+    Returns:
+        tuple: (success: bool, message: str, op_id: str)
+    """
+    try:
+        op_type = approval_data.get('operation_type', '')
+        project_ids = approval_data.get('project_ids', [])
+        project_names = approval_data.get('project_names', [])
+        
+        # 确定X列状态值
+        status_map = {
+            'archive': 'PENDING_ARCHIVE',
+            'unarchive': 'PENDING_UNARCHIVE',
+            'edit': 'PENDING_EDIT',
+            'batch_archive': 'PENDING_ARCHIVE',
+            'batch_unarchive': 'PENDING_UNARCHIVE',
+        }
+        x_status = status_map.get(op_type, '')
+        
+        # 设置X列状态
+        if x_status:
+            _set_approval_status(project_ids, x_status)
+        
+        # 写操作记录
+        op_data = {
+            '操作时间': datetime.now().isoformat(),
+            '操作人': operator,
+            '操作类型': op_type,
+            '项目ID列表': project_ids,
+            '项目名列表': project_names,
+            '变更前内容': approval_data.get('before_data', {}),
+            '变更后内容': approval_data.get('after_data', {}),
+            '状态': 'pending',
+        }
+        op_id = _append_operation(op_data)
+        
+        return True, f'审批申请已提交，等待审批（操作ID: {op_id}）', op_id
+    except Exception as e:
+        return False, f'提交审批失败: {str(e)}', ''
+
+
+def approve_operation(op_id, approver, comment=''):
+    """通过审批（触发实际的归档/编辑操作）
+    
+    Args:
+        op_id: 操作ID
+        approver: 审批人用户名
+        comment: 审批意见
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    from datetime import datetime
+    try:
+        # 读取操作记录
+        ops = _load_operations_sheet()
+        op = next((o for o in ops if o.get('操作ID') == op_id), None)
+        if not op:
+            return False, f'操作记录不存在: {op_id}'
+        if op.get('状态') != 'pending':
+            return False, f'该操作状态不是待审批: {op.get("状态")}'
+        
+        import json
+        op_type = op.get('操作类型', '')
+        project_ids = op.get('项目ID列表', [])
+        if isinstance(project_ids, str):
+            project_ids = json.loads(project_ids)
+        after_data = op.get('变更后内容', {})
+        if isinstance(after_data, str) and after_data:
+            after_data = json.loads(after_data)
+        
+        # 根据操作类型执行实际操作
+        ok = True
+        msg = ''
+        if op_type in ('archive', 'batch_archive'):
+            if len(project_ids) == 1:
+                ok, msg = action_archive_project(project_ids[0], approver)
+            else:
+                result = action_batch_archive(project_ids, approver)
+                ok = result.get('success', False)
+                msg = result.get('message', '')
+        elif op_type in ('unarchive', 'batch_unarchive'):
+            if len(project_ids) == 1:
+                ok, msg = action_unarchive_project(project_ids[0], approver)
+            else:
+                result = action_batch_unarchive(project_ids, approver)
+                ok = result.get('success', False)
+                msg = result.get('message', '')
+        elif op_type == 'edit':
+            if project_ids and after_data:
+                ok, msg = action_edit_project(project_ids[0], after_data, approver)
+            else:
+                ok, msg = False, '编辑操作缺少项目ID或变更内容'
+        else:
+            ok, msg = False, f'不支持的操作类型: {op_type}'
+        
+        if not ok:
+            return False, f'执行操作失败: {msg}'
+        
+        # 清空X列审批状态
+        _clear_approval_status(project_ids)
+        
+        # 更新操作记录
+        _update_operation(op_id, {
+            '状态': 'approved',
+            '审批人': approver,
+            '审批时间': datetime.now().isoformat(),
+            '变更后内容': {'审批意见': comment} if comment else {},
+        })
+        
+        return True, f'审批通过，操作已生效: {msg}'
+    except Exception as e:
+        return False, f'审批失败: {str(e)}'
+
+
+def reject_operation(op_id, approver, comment=''):
+    """拒绝审批
+    
+    Args:
+        op_id: 操作ID
+        approver: 审批人用户名
+        comment: 拒绝原因
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    from datetime import datetime
+    try:
+        # 读取操作记录
+        ops = _load_operations_sheet()
+        op = next((o for o in ops if o.get('操作ID') == op_id), None)
+        if not op:
+            return False, f'操作记录不存在: {op_id}'
+        if op.get('状态') != 'pending':
+            return False, f'该操作状态不是待审批: {op.get("状态")}'
+        
+        import json
+        project_ids = op.get('项目ID列表', [])
+        if isinstance(project_ids, str):
+            project_ids = json.loads(project_ids)
+        
+        # 清空X列审批状态
+        _clear_approval_status(project_ids)
+        
+        # 更新操作记录
+        _update_operation(op_id, {
+            '状态': 'rejected',
+            '审批人': approver,
+            '审批时间': datetime.now().isoformat(),
+            '变更后内容': {'拒绝原因': comment} if comment else {},
+        })
+        
+        return True, '审批已拒绝'
+    except Exception as e:
+        return False, f'拒绝审批失败: {str(e)}'
+
+
+def list_approvals(user, role, permissions):
+    """获取审批列表（按角色过滤）
+    
+    Args:
+        user: 当前用户名
+        role: 当前用户角色
+        permissions: 当前用户权限列表
+    
+    Returns:
+        dict: {
+            pending_for_me: [],   # 待我审批的
+            my_submissions: [],    # 我发起的
+        }
+    """
+    ops = _load_operations_sheet()
+    
+    can_approve = 'approve' in permissions
+    
+    pending_for_me = []
+    my_submissions = []
+    
+    for op in ops:
+        # 我发起的
+        if op.get('操作人') == user:
+            my_submissions.append(op)
+        # 待我审批的（只有有审批权的人才能看到）
+        if can_approve and op.get('状态') == 'pending':
+            pending_for_me.append(op)
+    
+    return {
+        'pending_for_me': pending_for_me,
+        'my_submissions': my_submissions,
+    }
+
+
+def count_pending_approvals(user, permissions):
+    """获取待我审批的数量"""
+    if 'approve' not in permissions:
+        return 0
+    ops = _load_operations_sheet()
+    return sum(1 for o in ops if o.get('状态') == 'pending')
+
+
+def list_operations(user, permissions, filters=None):
+    """获取操作记录列表（审计用）
+    
+    Args:
+        user: 当前用户名
+        permissions: 当前用户权限
+        filters: dict，过滤条件
+    
+    Returns:
+        list: 操作记录列表
+    """
+    ops = _load_operations_sheet()
+    
+    # 非admin/无audit_view权限的只能看自己的操作
+    if 'audit_view' not in permissions:
+        ops = [o for o in ops if o.get('操作人') == user]
+    
+    # 过滤
+    if filters:
+        if filters.get('operation_type'):
+            ops = [o for o in ops if o.get('操作类型') == filters['operation_type']]
+        if filters.get('status'):
+            ops = [o for o in ops if o.get('状态') == filters['status']]
+        if filters.get('operator'):
+            ops = [o for o in ops if filters['operator'] in str(o.get('操作人', ''))]
+    
+    return ops[:200]  # 最多返回200条
+
+
+def log_direct_operation(operation_type, project_ids, project_names, operator,
+                          before_data=None, after_data=None):
+    """记录直接生效的操作（editor/admin的归档/编辑/删除）
+    
+    Returns:
+        str: 操作ID
+    """
+    op_data = {
+        '操作时间': datetime.now().isoformat(),
+        '操作人': operator,
+        '操作类型': operation_type,
+        '项目ID列表': project_ids,
+        '项目名列表': project_names,
+        '变更前内容': before_data or {},
+        '变更后内容': after_data or {},
+        '状态': 'direct',
+    }
+    return _append_operation(op_data)
+
 
 # ==================== 测试 ====================
 

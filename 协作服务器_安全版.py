@@ -1451,9 +1451,9 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': ok, 'message': msg})
             return
 
-        # --- 删除项目（需 edit 权限）---
+        # --- 删除项目（需 delete 权限，仅admin）---
         if path == '/api/action/delete':
-            if not self.require_permission('edit'):
+            if not self.require_permission('delete'):
                 return
             user = self.get_current_user()
             pid = int(data.get('id', 0))
@@ -1506,9 +1506,9 @@ window.CURRENT_USER = {user_info};
             self.send_json(result)
             return
 
-        # --- 批量删除（需 edit 权限）---
+        # --- 批量删除（需 delete 权限，仅admin）---
         if path == '/api/action/batch-delete':
-            if not self.require_permission('edit'):
+            if not self.require_permission('delete'):
                 return
             user = self.get_current_user()
             ids = data.get('ids', [])
@@ -1527,6 +1527,92 @@ window.CURRENT_USER = {user_info};
             ok, msg = sync_excel.action_edit_project(pid, edit_data, user['username'])
             auth._audit_log('PROJECT_EDIT', user['username'], f'ID={pid}: {msg[:80]}')
             self.send_json({'success': ok, 'message': msg})
+            return
+
+        # ========== 审批系统 API ==========
+
+        # --- 提交审批申请（需 submit_approval 权限）---
+        if path == '/api/approval/submit':
+            if not self.require_permission('submit_approval'):
+                return
+            user = self.get_current_user()
+            approval_data = {
+                'operation_type': data.get('operation_type', ''),
+                'project_ids': data.get('project_ids', []),
+                'project_names': data.get('project_names', []),
+                'before_data': data.get('before_data', {}),
+                'after_data': data.get('after_data', {}),
+            }
+            ok, msg, op_id = sync_excel.submit_approval(approval_data, user['username'])
+            auth._audit_log('APPROVAL_SUBMIT', user['username'], f'{op_id}: {approval_data["operation_type"]}')
+            self.send_json({'success': ok, 'message': msg, 'op_id': op_id})
+            return
+
+        # --- 获取审批列表（需已登录）---
+        if path == '/api/approval/list':
+            if not self.require_auth():
+                return
+            user = self.get_current_user()
+            result = sync_excel.list_approvals(
+                user['username'],
+                user.get('role', ''),
+                user.get('permissions', [])
+            )
+            self.send_json({'success': True, 'data': result})
+            return
+
+        # --- 通过审批（需 approve 权限）---
+        if path == '/api/approval/approve':
+            if not self.require_permission('approve'):
+                return
+            user = self.get_current_user()
+            op_id = data.get('op_id', '')
+            comment = data.get('comment', '')
+            ok, msg = sync_excel.approve_operation(op_id, user['username'], comment)
+            auth._audit_log('APPROVAL_APPROVE', user['username'], f'{op_id}: {msg[:80]}')
+            self.send_json({'success': ok, 'message': msg})
+            return
+
+        # --- 拒绝审批（需 approve 权限）---
+        if path == '/api/approval/reject':
+            if not self.require_permission('approve'):
+                return
+            user = self.get_current_user()
+            op_id = data.get('op_id', '')
+            comment = data.get('comment', '')
+            ok, msg = sync_excel.reject_operation(op_id, user['username'], comment)
+            auth._audit_log('APPROVAL_REJECT', user['username'], f'{op_id}: {msg[:80]}')
+            self.send_json({'success': ok, 'message': msg})
+            return
+
+        # --- 获取待审批数量（需已登录）---
+        if path == '/api/approval/count':
+            if not self.require_auth():
+                return
+            user = self.get_current_user()
+            count = sync_excel.count_pending_approvals(
+                user['username'],
+                user.get('permissions', [])
+            )
+            self.send_json({'success': True, 'count': count})
+            return
+
+        # --- 获取操作记录列表（需已登录）---
+        if path == '/api/operations/list':
+            if not self.require_auth():
+                return
+            user = self.get_current_user()
+            filters = {
+                'operation_type': data.get('operation_type', ''),
+                'status': data.get('status', ''),
+                'operator': data.get('operator', ''),
+            }
+            result = sync_excel.list_operations(
+                user['username'],
+                user.get('permissions', []),
+                filters
+            )
+            self.send_json({'success': True, 'data': result})
             return
 
         # --- 解析导入（需 edit 权限）---

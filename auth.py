@@ -58,8 +58,11 @@ ROLES = {
         'name': '管理员',
         'permissions': [
             'view',           # 查看报表
-            'edit',           # 编辑数据
+            'edit',           # 编辑/归档（直接生效）
+            'delete',         # 删除项目（仅admin）
             'save',           # 全量保存
+            'submit_approval',# 提交审批申请
+            'approve',        # 审批他人申请
             'user_manage',    # 用户管理
             'role_manage',    # 角色管理
             'audit_view',     # 查看审计日志
@@ -72,12 +75,15 @@ ROLES = {
             'view',
             'edit',
             'save',
+            'submit_approval',
+            'approve',        # 编辑者也有审批权
         ]
     },
     'viewer': {
         'name': '只读用户',
         'permissions': [
             'view',
+            'submit_approval',# 只读用户可提交审批（归档/编辑需审批）
         ]
     }
 }
