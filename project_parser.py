@@ -434,8 +434,8 @@ def _merge_design_review(resources):
     for i, r in enumerate(resources):
         groups[r['资源名称']].append((i, r))
     
-    to_remove = set()
-    merged_results = []
+    # 先找出所有要合并的索引对
+    merge_pairs = []  # [(d_idx, r_idx, merged_record)]
     
     for name, items in groups.items():
         # 筛选设计和评审
@@ -465,21 +465,39 @@ def _merge_design_review(resources):
                         merged['is_unresolved_tr'] = design.get('is_unresolved_tr', False) or review.get('is_unresolved_tr', False)
                         merged['is_unresolved_project'] = design.get('is_unresolved_project', False) or review.get('is_unresolved_project', False)
                         
-                        to_remove.add(d_idx)
-                        to_remove.add(r_idx)
                         matched_reviews.add(r_idx)
-                        merged_results.append((min(d_idx, r_idx), merged))
+                        merge_pairs.append((d_idx, r_idx, merged))
                         break
     
-    # 构建最终列表
-    result = []
-    for i, r in enumerate(resources):
-        if i not in to_remove:
-            result.append(r)
+    # 标记所有被合并的索引
+    to_remove = set()
+    for d_idx, r_idx, _ in merge_pairs:
+        to_remove.add(d_idx)
+        to_remove.add(r_idx)
     
-    # 插入合并结果
-    for pos, merged in sorted(merged_results, key=lambda x: x[0]):
-        result.insert(pos, merged)
+    # 构建映射：合并对中较小的索引 -> 合并后的记录
+    merge_at = {}
+    for d_idx, r_idx, merged in merge_pairs:
+        start_pos = min(d_idx, r_idx)
+        merge_at[start_pos] = merged
+    
+    # 按原始顺序构建结果
+    result = []
+    skip_set = set()
+    for i, r in enumerate(resources):
+        if i in skip_set:
+            continue
+        if i in merge_at:
+            # 这是合并对的起始位置，输出合并后的记录
+            result.append(merge_at[i])
+            # 标记合并对的两个索引都跳过
+            for d_idx, r_idx, _ in merge_pairs:
+                if min(d_idx, r_idx) == i:
+                    skip_set.add(d_idx)
+                    skip_set.add(r_idx)
+                    break
+        else:
+            result.append(r)
     
     return result
 
