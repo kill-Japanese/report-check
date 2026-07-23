@@ -635,22 +635,29 @@ def parse_pdf(pdf_path):
                     if len(table) < 2:
                         continue
                     
-                    # 检查是否是任务表格
-                    first_row = [str(c).replace('\n', ' ').strip() if c else '' for c in table[0]]
-                    is_task_table = any('标识号' in c or '任务名称' in c for c in first_row)
+                    # 【关键修复】检查是否是任务表格：表头可能在第1行或第2行（标题行占用第1行）
+                    header_row_idx = -1
+                    header_row = None
+                    for check_idx in range(min(3, len(table))):
+                        check_row = [str(c).replace('\n', ' ').strip() if c else '' for c in table[check_idx]]
+                        is_task = any('标识号' in c or '任务名称' in c for c in check_row)
+                        if is_task:
+                            header_row_idx = check_idx
+                            header_row = check_row
+                            break
                     
-                    if not is_task_table:
+                    if header_row_idx == -1:
                         continue
                     
-                    debug_info.append(f'  表格{t_idx+1}: 识别为任务表，共{len(table)}行, {len(first_row)}列, 表头={first_row}')
+                    debug_info.append(f'  表格{t_idx+1}: 识别为任务表(表头在第{header_row_idx+1}行)，共{len(table)}行, {len(header_row)}列, 表头={header_row}')
                     
-                    # 找到列索引
+                    # 找到列索引（用检测到的表头行）
                     col_idx = {}
-                    for i, h in enumerate(first_row):
+                    for i, h in enumerate(header_row):
                         h_clean = h.replace('\n', '').strip()
                         if '标识号' in h_clean:
                             col_idx['id'] = i
-                        elif '任务名称' in h_clean:
+                        elif '任务名称' in h_clean or 'Task Name' in h_clean:
                             col_idx['name'] = i
                         elif '工期' in h_clean and '工时' not in h_clean:
                             col_idx['duration'] = i
@@ -672,8 +679,8 @@ def parse_pdf(pdf_path):
                         debug_info.append(f'  ⚠ 缺少id或name列，跳过')
                         continue
                     
-                    # 解析数据行
-                    for row in table[1:]:
+                    # 解析数据行（从表头行的下一行开始）
+                    for row in table[header_row_idx + 1:]:
                         def _is_gantt_noise(s):
                             """判断字符串是否为纯甘特图噪音（无有效数据）"""
                             if not s or not s.strip():
