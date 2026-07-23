@@ -1939,7 +1939,7 @@ def _write_approval_row(project_id, status, submitter, op_type, detail=''):
     wb = load_workbook(EXCEL_FILE)
     ws = wb['任务计划表']
     
-    row_num = int(project_id) + 2  # id从0开始，第1行是表头，id=0对应第2行
+    row_num = int(project_id) + 1  # id从3开始(id=3对应第4行), 所以 row = id + 1
     if 2 <= row_num <= ws.max_row:
         ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1, value=status)
         if status:
@@ -2156,6 +2156,12 @@ def approve_operation(op_id, approver, comment=''):
             '审批时间': datetime.now().isoformat(),
         })
         
+        # 【关键修复】审批通过后必须推送到GitHub（action_edit_project等已有自己的推送，
+        # 但update_operation的写入可能晚于推送，确保最终状态同步）
+        import threading
+        thread = threading.Thread(target=_background_report_and_push, args=(f'{approver}通过审批{op_id}',), daemon=True)
+        thread.start()
+        
         return True, f'审批通过，操作已生效: {msg}'
     except Exception as e:
         return False, f'审批失败: {str(e)}'
@@ -2190,6 +2196,11 @@ def reject_operation(op_id, approver, comment=''):
             '审批时间': datetime.now().isoformat(),
             '变更后内容': {'拒绝原因': comment} if comment else {},
         })
+        
+        # 【关键修复】拒绝后必须推送到GitHub，否则Render重新部署会从旧数据恢复
+        import threading
+        thread = threading.Thread(target=_background_report_and_push, args=(f'{approver}拒绝审批{op_id}',), daemon=True)
+        thread.start()
         
         return True, '审批已拒绝'
     except Exception as e:
@@ -2228,6 +2239,12 @@ def cancel_operation(op_id, operator):
         })
         
         auth._audit_log('APPROVAL_CANCEL', operator, f'{op_id}: 撤回审批申请')
+        
+        # 【关键修复】撤回后必须推送到GitHub，否则Render重新部署会从旧数据恢复
+        import threading
+        thread = threading.Thread(target=_background_report_and_push, args=(f'{operator}撤回审批{op_id}',), daemon=True)
+        thread.start()
+        
         return True, '已撤回审批申请'
     except Exception as e:
         return False, f'撤回失败: {str(e)}'
