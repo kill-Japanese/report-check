@@ -3785,8 +3785,26 @@ function saveNote(id, text) {
 
 // ==================== 编辑项目功能 ====================
 async function editProject(id) {
-  const p = RAW_DATA.allProjects.find(x => x.id === id);
+  // 【关键修复】先从服务器获取最新数据，避免使用过时的缓存
+  let p = RAW_DATA.allProjects.find(x => x.id === id);
   if (!p) { alert('项目不存在'); return; }
+  
+  // 协作模式下：从服务器获取最新数据
+  if (collabIsEnabled()) {
+    try {
+      const resp = await fetch('/api/projects');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.allProjects) {
+          RAW_DATA.allProjects = data.allProjects;
+          p = RAW_DATA.allProjects.find(x => x.id === id);
+          if (!p) { alert('项目不存在'); return; }
+        }
+      }
+    } catch(e) {
+      console.warn('[编辑] 获取最新数据失败，使用缓存:', e);
+    }
+  }
 
   // 获取实际值（考虑 localEdits）
   const actual = getProject(p);

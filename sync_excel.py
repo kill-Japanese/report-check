@@ -2043,6 +2043,32 @@ def submit_approval(approval_data, operator):
             for pid in project_ids:
                 _write_approval_row(pid, x_status, operator, op_type, detail_json)
         
+        # 【关键修复】对于edit操作，从Excel读取当前真实值作为变更前内容
+        # 不信任前端传来的before_data（可能是过时的缓存）
+        real_before_data = approval_data.get('before_data', {})
+        if op_type == 'edit' and project_ids:
+            try:
+                all_projects = read_excel_projects()
+                pid = project_ids[0]
+                current = next((p for p in all_projects if p['id'] == pid), None)
+                if current:
+                    real_before_data = {
+                        '部门': current.get('部门', ''),
+                        '项目': current.get('项目', ''),
+                        '项目描述': current.get('项目描述', ''),
+                        '资源类型': current.get('资源类型', ''),
+                        '资源名称': current.get('资源名称', ''),
+                        '资源开始时间': current.get('资源开始时间', ''),
+                        '资源结束时间': current.get('资源结束时间', ''),
+                        '日平均工时': current.get('日平均工时', 0),
+                    }
+                    # 同时更新项目名列表
+                    if not approval_data.get('project_names'):
+                        approval_data['project_names'] = [current.get('项目', '')]
+                    print(f'[审批] edit操作: 从Excel读取真实before_data, 项目={current.get("项目", "")}')
+            except Exception as e:
+                print(f'[审批] 读取Excel真实before_data失败，使用前端数据: {e}')
+        
         # 同时写操作记录（审计用，不参与核心流程）
         op_data = {
             '操作时间': datetime.now().isoformat(),
@@ -2050,7 +2076,7 @@ def submit_approval(approval_data, operator):
             '操作类型': op_type,
             '项目ID列表': project_ids,
             '项目名列表': approval_data.get('project_names', []),
-            '变更前内容': approval_data.get('before_data', {}),
+            '变更前内容': real_before_data,
             '变更后内容': after_data,
             '状态': 'pending',
         }
