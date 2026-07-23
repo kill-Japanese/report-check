@@ -1360,9 +1360,15 @@ function needsApproval() {
 // ==================== 审批系统前端函数 ====================
 
 // 提交审批申请
-async function submitApproval(operationType, ids, beforeData, afterData) {
+async function submitApproval(operationType, ids, beforeData, afterData, projectNames) {
   const projects = ids.map(id => RAW_DATA.allProjects.find(x => x.id === id)).filter(Boolean);
-  const projectNames = projects.map(p => (p['项目'] || p['项目名称'] || '').trim()).filter(n => n);
+  // 如果调用方已经传入了项目名，直接用；否则自己查
+  if (!projectNames || projectNames.length === 0) {
+    projectNames = projects.map(p => {
+      const name = p.项目 || p['项目名称'] || p['项目名'] || p.name || p.project || '';
+      return name.trim();
+    }).filter(n => n);
+  }
   if (projectNames.length === 0) projectNames.push('未知项目');
   
   const resp = await fetch('/api/approval/submit', {
@@ -1587,6 +1593,52 @@ async function loadApprovalPanel() {
     const canAct = isPending && canApprove() && r['操作人'] !== username;
     const canCancel = isPending && r['操作人'] === username;
     
+    // 字段中文名映射
+    const fieldLabelMap = {
+      '资源名称': '负责人',
+      '资源开始时间': '开始时间',
+      '资源结束时间': '结束时间',
+      '资源类型': '资源类型',
+      '日平均工时': '日平均工时'
+    };
+    
+    // 生成编辑变更内容HTML（仅edit类型）
+    let editChangesHtml = '';
+    if (r['操作类型'] === 'edit') {
+      let beforeData = r['变更前内容'] || {};
+      let afterData = r['变更后内容'] || {};
+      // 处理JSON字符串
+      if (typeof beforeData === 'string') { try { beforeData = JSON.parse(beforeData); } catch(e) {} }
+      if (typeof afterData === 'string') { try { afterData = JSON.parse(afterData); } catch(e) {} }
+      
+      const changedFields = [];
+      for (const key of Object.keys(fieldLabelMap)) {
+        const beforeVal = beforeData[key];
+        const afterVal = afterData[key];
+        if (String(beforeVal) !== String(afterVal)) {
+          changedFields.push({
+            label: fieldLabelMap[key] || key,
+            before: beforeVal,
+            after: afterVal
+          });
+        }
+      }
+      
+      if (changedFields.length > 0) {
+        editChangesHtml = '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px;margin:8px 0">';
+        editChangesHtml += '<div style="font-weight:600;color:#0369a1;font-size:13px;margin-bottom:6px">📝 变更内容：</div>';
+        changedFields.forEach(f => {
+          editChangesHtml += `<div style="font-size:12px;color:#374151;line-height:1.8">
+            <strong>${f.label}：</strong>
+            <span style="color:#ef4444;text-decoration:line-through">${f.before !== undefined && f.before !== '' ? f.before : '（空）'}</span>
+            <span style="color:#6b7280;margin:0 4px">→</span>
+            <span style="color:#10b981;font-weight:500">${f.after !== undefined && f.after !== '' ? f.after : '（空）'}</span>
+          </div>`;
+        });
+        editChangesHtml += '</div>';
+      }
+    }
+    
     html += `
       <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;background:white">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -1602,6 +1654,7 @@ async function loadApprovalPanel() {
         <div style="color:#374151;font-size:13px;margin-bottom:4px">
           <strong>项目：</strong>${Array.isArray(r['项目名列表']) ? r['项目名列表'].join('、') : (r['项目名列表'] || '无')}
         </div>
+        ${editChangesHtml}
         ${r['审批人'] ? `<div style="color:#374151;font-size:13px;margin-bottom:4px"><strong>审批人：</strong>${r['审批人']}${r['审批时间'] ? ' (' + r['审批时间'] + ')' : ''}</div>` : ''}
         ${canAct ? `
           <div style="margin-top:8px;display:flex;gap:8px">
@@ -3741,8 +3794,8 @@ async function editProject(id) {
     }
 
     if (isViewer) {
-      // viewer：提交审批
-      await submitApproval('edit', [id], beforeData, afterData);
+      // viewer：提交审批（传入项目名，避免查找失败）
+      await submitApproval('edit', [id], beforeData, afterData, [projectName]);
     } else {
       // editor/admin：直接保存
       const editData = {};
