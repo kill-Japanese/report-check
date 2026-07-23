@@ -2268,6 +2268,33 @@ def list_approvals(user, role, permissions):
                 except:
                     pass
             
+            # 【关键修复】从操作记录中提取变更前内容（之前硬编码为{}，导致管理/编辑用户看不到变更前）
+            before_data = {}
+            if real_op_id:
+                for o in pending_ops:
+                    if o.get('操作ID') == real_op_id:
+                        before_data = o.get('变更前内容', {}) or {}
+                        # 如果操作记录中的after_data更完整，也优先使用
+                        if not after_data and o.get('变更后内容'):
+                            after_data = o.get('变更后内容', {}) or {}
+                        break
+            
+            # 【兜底】对于编辑操作，如果还是没有变更前内容，从Excel读取原始值
+            if op_type == 'edit' and not before_data and after_data:
+                try:
+                    FIELD_TO_COLUMN = {
+                        '部门': 5, '项目': 6, '项目开始时间': 7, '项目结束时间': 8,
+                        '项目描述': 9, '资源类型': 10, '资源名称': 11,
+                        '资源开始时间': 12, '资源结束时间': 13, '日平均工时': 14,
+                    }
+                    for field in after_data.keys():
+                        col = FIELD_TO_COLUMN.get(field)
+                        if col:
+                            val = ws.cell(row=row_num, column=col).value
+                            before_data[field] = str(val) if val is not None else ''
+                except:
+                    pass
+            
             pending_for_me.append({
                 '操作ID': real_op_id or f'ROW-{project_id}',
                 '操作时间': submit_time,
@@ -2275,7 +2302,7 @@ def list_approvals(user, role, permissions):
                 '操作类型': op_type,
                 '项目ID列表': [project_id],
                 '项目名列表': [str(project_name)],
-                '变更前内容': {},
+                '变更前内容': before_data,
                 '变更后内容': after_data,
                 '状态': 'pending',
                 '审批人': '',
