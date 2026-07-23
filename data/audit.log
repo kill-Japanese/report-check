@@ -149,5 +149,12 @@
 [2026-07-21 14:25:46] LOGIN | 用户: xjq | 登录成功
 [2026-07-21 14:26:15] DATA_SYNC | 用户: admin | 数据同步更新
 [2026-07-21 14:30:01] USER_CREATE | 用户: admin | 创建用户: yjl, 角色: editor
-[2026-07-23 09:19:31] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
-[2026-07-23 09:20:02] LOGIN | 用户: xjq | 登录成功
+[2026-07-23 09:30:31] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-07-23 09:31:15] LOGIN | 用户: mwh | 登录成功
+[2026-07-23 09:31:32] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-015: archive
+[2026-07-23 09:31:54] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-016: edit
+[2026-07-23 09:32:48] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-017: add项目:巴勒斯坦超声户表二开
+[2026-07-23 09:33:22] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-018: edit
+[2026-07-23 09:33:36] LOGIN | 用户: xjq | 登录成功
+[2026-07-23 09:34:07] APPROVAL_REJECT | 用户: xjq | ROW-50: 操作记录不存在: ROW-50
+[2026-07-23 09:34:24] APPROVAL_REJECT | 用户: xjq | ROW-50: 操作记录不存在: ROW-50
