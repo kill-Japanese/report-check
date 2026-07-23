@@ -1492,13 +1492,34 @@ window.CURRENT_USER = {user_info};
         # --- 新增项目（需 edit 权限）---
         # 【关键优化】操作后不返回全量项目数据，避免大JSON序列化导致502超时
         # 前端收到成功响应后自行刷新页面或调用 /api/projects 获取最新数据
+        # --- 新增项目（editor/admin直接写入，viewer走审批）---
         if path == '/api/action/add':
-            if not self.require_permission('edit'):
-                return
             user = self.get_current_user()
-            ok, msg = sync_excel.action_add_project(data, user['username'])
-            auth._audit_log('PROJECT_ADD', user['username'], msg[:100])
-            self.send_json({'success': ok, 'message': msg})
+            can_edit = 'edit' in user.get('permissions', [])
+            can_submit = 'submit_approval' in user.get('permissions', [])
+            
+            if not can_edit and not can_submit:
+                self.send_json({'success': False, 'message': '无权限添加项目'}, status=403)
+                return
+            
+            if can_edit:
+                # editor/admin：直接写入
+                ok, msg = sync_excel.action_add_project(data, user['username'])
+                auth._audit_log('PROJECT_ADD', user['username'], msg[:100])
+                self.send_json({'success': ok, 'message': msg, 'need_approval': False})
+            else:
+                # viewer：走审批流程
+                project_name = data.get('项目', '')
+                approval_data = {
+                    'operation_type': 'add',
+                    'project_ids': [],  # 新增项目还没有ID
+                    'project_names': [project_name] if project_name else [],
+                    'before_data': {},
+                    'after_data': data,
+                }
+                ok, msg, op_id = sync_excel.submit_approval(approval_data, user['username'])
+                auth._audit_log('APPROVAL_SUBMIT', user['username'], f'{op_id}: add项目:{project_name}')
+                self.send_json({'success': ok, 'message': msg, 'need_approval': True, 'op_id': op_id})
             return
 
         # --- 删除项目（需 delete 权限，仅admin）---

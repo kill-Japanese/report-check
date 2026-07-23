@@ -2025,19 +2025,23 @@ def submit_approval(approval_data, operator):
             'edit': 'PENDING_EDIT',
             'batch_archive': 'PENDING_ARCHIVE',
             'batch_unarchive': 'PENDING_UNARCHIVE',
+            'add': 'PENDING_ADD',
         }
         x_status = status_map.get(op_type, '')
         if not x_status:
             return False, f'不支持的操作类型: {op_type}', ''
         
-        # 变更内容转JSON（仅编辑用）
+        # 变更内容转JSON（编辑和新增用）
         detail_json = ''
-        if op_type == 'edit' and after_data:
+        if (op_type == 'edit' or op_type == 'add') and after_data:
             detail_json = json.dumps(after_data, ensure_ascii=False)
         
-        # 逐行写入审批信息
-        for pid in project_ids:
-            _write_approval_row(pid, x_status, operator, op_type, detail_json)
+        # 【add特殊处理】新增项目还没有行号，不写任务计划表的审批列
+        # 只通过操作记录保存，审批通过后再执行新增
+        if op_type != 'add':
+            # 逐行写入审批信息
+            for pid in project_ids:
+                _write_approval_row(pid, x_status, operator, op_type, detail_json)
         
         # 同时写操作记录（审计用，不参与核心流程）
         op_data = {
@@ -2100,15 +2104,24 @@ def approve_operation(op_id, approver, comment=''):
                 ok, msg = action_edit_project(project_ids[0], after_data, approver)
             else:
                 ok, msg = False, '编辑操作缺少项目ID或变更内容'
+        elif op_type == 'add':
+            after_data = op.get('变更后内容', {})
+            if isinstance(after_data, str) and after_data:
+                after_data = json.loads(after_data)
+            if after_data:
+                ok, msg = action_add_project(after_data, approver)
+            else:
+                ok, msg = False, '新增操作缺少项目数据'
         else:
             ok, msg = False, f'不支持的操作类型: {op_type}'
         
         if not ok:
             return False, f'执行操作失败: {msg}'
         
-        # 清除任务计划表的审批列
-        for pid in project_ids:
-            _write_approval_row(pid, '', '', '', '')
+        # 清除任务计划表的审批列（add操作不需要，因为还没有行）
+        if op_type != 'add':
+            for pid in project_ids:
+                _write_approval_row(pid, '', '', '', '')
         
         # 更新操作记录
         _update_operation(op_id, {
@@ -2137,10 +2150,12 @@ def reject_operation(op_id, approver, comment=''):
         project_ids = op.get('项目ID列表', [])
         if isinstance(project_ids, str):
             project_ids = json.loads(project_ids)
+        op_type = op.get('操作类型', '')
         
-        # 清除任务计划表的审批列
-        for pid in project_ids:
-            _write_approval_row(pid, '', '', '', '')
+        # 清除任务计划表的审批列（add操作不需要）
+        if op_type != 'add':
+            for pid in project_ids:
+                _write_approval_row(pid, '', '', '', '')
         
         # 更新操作记录
         _update_operation(op_id, {
@@ -2172,10 +2187,12 @@ def cancel_operation(op_id, operator):
         project_ids = op.get('项目ID列表', [])
         if isinstance(project_ids, str):
             project_ids = json.loads(project_ids)
+        op_type = op.get('操作类型', '')
         
-        # 清除任务计划表的审批列
-        for pid in project_ids:
-            _write_approval_row(pid, '', '', '', '')
+        # 清除任务计划表的审批列（add操作不需要）
+        if op_type != 'add':
+            for pid in project_ids:
+                _write_approval_row(pid, '', '', '', '')
         
         # 更新操作记录
         _update_operation(op_id, {
@@ -2311,6 +2328,27 @@ def list_approvals(user, role, permissions):
         
         wb.close()
     
+    # === Part 1.5: 从操作记录读取 add 类型的待审批（新增项目没有行号，不写任务计划表）===
+    if can_approve:
+        all_ops = _load_operations_sheet()
+        add_pending = [o for o in all_ops if o.get('操作类型') == 'add' and o.get('状态') == 'pending']
+        for o in add_pending:
+            after_data = o.get('变更后内容', {}) or {}
+            project_name = after_data.get('项目', '') if isinstance(after_data, dict) else ''
+            pending_for_me.append({
+                '操作ID': o.get('操作ID', ''),
+                '操作时间': o.get('操作时间', ''),
+                '操作人': o.get('操作人', ''),
+                '操作类型': 'add',
+                '项目ID列表': o.get('项目ID列表', []),
+                '项目名列表': [project_name] if project_name else o.get('项目名列表', []),
+                '变更前内容': o.get('变更前内容', {}) or {},
+                '变更后内容': after_data,
+                '状态': 'pending',
+                '审批人': '',
+                '审批时间': '',
+            })
+    
     # === Part 2: 从操作记录读取"我发起的" ===
     ops = _load_operations_sheet()
     my_submissions = [o for o in ops if o.get('操作人') == user]
@@ -2322,7 +2360,7 @@ def list_approvals(user, role, permissions):
 
 
 def count_pending_approvals(user, permissions):
-    """获取待我审批的数量（简化版：扫描任务计划表X列）"""
+    """获取待我审批的数量（任务计划表X列 + 操作记录add类型）"""
     if 'approve' not in permissions:
         return 0
     
@@ -2337,6 +2375,12 @@ def count_pending_approvals(user, permissions):
             count += 1
     
     wb.close()
+    
+    # 加上 add 类型的待审批（新增项目没有行号，存在操作记录中）
+    all_ops = _load_operations_sheet()
+    add_count = sum(1 for o in all_ops if o.get('操作类型') == 'add' and o.get('状态') == 'pending')
+    count += add_count
+    
     return count
 
 
