@@ -1472,7 +1472,7 @@ function openApprovalPanel() {
   const modal = document.createElement('div');
   modal.id = 'approvalPanelOverlay';
   modal.className = 'modal-overlay';
-  modal.innerHTML = \\`
+  modal.innerHTML = `
     <div class="modal-box" style="max-width:1000px;max-height:80vh;display:flex;flex-direction:column">
       <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
       <h3>🔔 审批管理</h3>
@@ -1487,7 +1487,7 @@ function openApprovalPanel() {
         <div style="text-align:center;color:#9ca3af;padding:40px">加载中...</div>
       </div>
     </div>
-  \\`;
+  `;
   document.body.appendChild(modal);
   switchApprovalTab('pending');
 }
@@ -1556,30 +1556,30 @@ async function loadApprovalPanel() {
     const isPending = r['状态'] === 'pending';
     const canAct = isPending && canApprove() && r['操作人'] !== username;
     
-    html += \\`
+    html += `
       <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;background:white">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div>
-            <span style="font-weight:600;color:#111827">\\${opType}</span>
-            <span style="margin-left:8px;padding:2px 8px;border-radius:4px;background:\\${st.color};color:white;font-size:12px">\\${st.text}</span>
+            <span style="font-weight:600;color:#111827">${opType}</span>
+            <span style="margin-left:8px;padding:2px 8px;border-radius:4px;background:${st.color};color:white;font-size:12px">${st.text}</span>
           </div>
-          <span style="color:#6b7280;font-size:12px">\\${r['操作时间'] || ''}</span>
+          <span style="color:#6b7280;font-size:12px">${r['操作时间'] || ''}</span>
         </div>
         <div style="color:#374151;font-size:13px;margin-bottom:4px">
-          <strong>操作人：</strong>\\${r['操作人'] || '未知'}
+          <strong>操作人：</strong>${r['操作人'] || '未知'}
         </div>
         <div style="color:#374151;font-size:13px;margin-bottom:4px">
-          <strong>项目：</strong>\\${(r['项目名列表'] || []).join('、') || '无'}
+          <strong>项目：</strong>${(r['项目名列表'] || []).join('、') || '无'}
         </div>
-        \\${r['审批人'] ? \\`<div style="color:#374151;font-size:13px;margin-bottom:4px"><strong>审批人：</strong>\\${r['审批人']}\\${r['审批时间'] ? ' (' + r['审批时间'] + ')' : ''}</div>\\` : ''}
-        \\${canAct ? \\`
+        ${r['审批人'] ? `<div style="color:#374151;font-size:13px;margin-bottom:4px"><strong>审批人：</strong>${r['审批人']}${r['审批时间'] ? ' (' + r['审批时间'] + ')' : ''}</div>` : ''}
+        ${canAct ? `
           <div style="margin-top:8px;display:flex;gap:8px">
-            <button class="btn" style="background:#10b981;color:white" onclick="approveRequest('\\${r['操作ID']}')">✓ 通过</button>
-            <button class="btn" style="background:#ef4444;color:white" onclick="rejectRequest('\\${r['操作ID']}')">✗ 拒绝</button>
+            <button class="btn" style="background:#10b981;color:white" onclick="approveRequest('${r['操作ID']}')">✓ 通过</button>
+            <button class="btn" style="background:#ef4444;color:white" onclick="rejectRequest('${r['操作ID']}')">✗ 拒绝</button>
           </div>
-        \\` : ''}
+        ` : ''}
       </div>
-    \\`;
+    `;
   });
   html += '</div>';
   container.innerHTML = html;
