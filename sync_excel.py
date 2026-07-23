@@ -1675,7 +1675,7 @@ def _load_operations_sheet():
     ws = wb[OPERATIONS_SHEET]
     
     operations = []
-    headers = [cell.value for cell in ws[1]]
+    headers = [cell.value.strip() if isinstance(cell.value, str) else cell.value for cell in ws[1]]
     
     import json
     for row_idx in range(2, ws.max_row + 1):

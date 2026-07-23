@@ -1362,7 +1362,7 @@ function needsApproval() {
 // 提交审批申请
 async function submitApproval(operationType, ids, beforeData, afterData) {
   const projects = ids.map(id => RAW_DATA.allProjects.find(x => x.id === id)).filter(Boolean);
-  const projectNames = projects.map(p => p['项目名称'] || '未知项目');
+  const projectNames = projects.map(p => p['项目'] || p['项目名称'] || '未知项目');
   
   const resp = await fetch('/api/approval/submit', {
     method: 'POST',

@@ -936,11 +936,17 @@ class SecureCollaborationHandler(http.server.SimpleHTTPRequestHandler):
         return self._session
 
     def get_current_user(self):
-        """获取当前登录用户"""
+        """获取当前登录用户（补充role和permissions字段）"""
         session = self.get_current_session()
         if not session:
             return None
-        return auth.get_user(session['username'])
+        user = auth.get_user(session['username'])
+        if user:
+            # 补充permissions（用户对象本身没有，从ROLES中获取）
+            role = user.get('role', 'viewer')
+            user['role'] = role
+            user['permissions'] = auth.ROLES.get(role, {}).get('permissions', [])
+        return user
 
     def set_session_cookie(self, session_id: str):
         """设置 Session Cookie（兼容 Chrome/Safari/Edge/Render HTTPS）
