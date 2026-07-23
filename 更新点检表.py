@@ -2566,9 +2566,9 @@ function renderBoardView(data, container) {
           html += '<td><span class="status-tag ' + status.class + '" style="font-size:11px">' + status.icon + ' ' + status.label + '</span></td>';
           html += '<td class="note-cell"><div class="editable ' + (noteText ? '' : 'note-text') + '" contenteditable="true" onblur="saveNote(' + r.id + ', this.innerText)" onfocus="if(this.innerText===\\'点击添加备注...\\'){this.innerText=\\'\\';this.classList.remove(\\'note-text\\')}" data-id="' + r.id + '">' + (noteText || '点击添加备注...') + '</div></td>';
           if (archived[r.id]) {
-            html += '<td><button class="archive-btn restore" onclick="restoreProject(' + r.id + ')">↩️ 恢复</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(' + r.id + ')">🗑️ 删除</button></td>';
+            html += '<td><button class="archive-btn restore" onclick="restoreProject(' + r.id + ')">↩️ 恢复</button> <button class="archive-btn" style="background:#3b82f6" onclick="editProject(' + r.id + ')">✏️ 编辑</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(' + r.id + ')">🗑️ 删除</button></td>';
           } else {
-            html += '<td><button class="archive-btn" onclick="archiveProject(' + r.id + ')">📦 归档</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(' + r.id + ')">🗑️ 删除</button></td>';
+            html += '<td><button class="archive-btn" onclick="archiveProject(' + r.id + ')">📦 归档</button> <button class="archive-btn" style="background:#3b82f6" onclick="editProject(' + r.id + ')">✏️ 编辑</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(' + r.id + ')">🗑️ 删除</button></td>';
           }
           html += '</tr>';
         });
@@ -3546,9 +3546,9 @@ function renderTable() {
               onfocus="if(this.innerText==='点击添加备注...'){this.innerText='';this.classList.remove('note-text')}"
               data-id="${p.id}">${noteText || '点击添加备注...'}</div></td>`;
     if (isProjectArchived(p)) {
-      html += `<td><button class="archive-btn restore" onclick="restoreProject(${p.id})">↩️ 恢复</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(${p.id})">🗑️ 删除</button></td>`;
+      html += `<td><button class="archive-btn restore" onclick="restoreProject(${p.id})">↩️ 恢复</button> <button class="archive-btn" style="background:#3b82f6" onclick="editProject(${p.id})">✏️ 编辑</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(${p.id})">🗑️ 删除</button></td>`;
     } else {
-      html += `<td><button class="archive-btn" onclick="archiveProject(${p.id})">📦 归档</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(${p.id})">🗑️ 删除</button></td>`;
+      html += `<td><button class="archive-btn" onclick="archiveProject(${p.id})">📦 归档</button> <button class="archive-btn" style="background:#3b82f6" onclick="editProject(${p.id})">✏️ 编辑</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(${p.id})">🗑️ 删除</button></td>`;
     }
     html += '</tr>';
   });
@@ -3629,6 +3629,107 @@ function saveNote(id, text) {
   }
   localStorage.setItem('projectNotes', JSON.stringify(notes));
   showSaved();
+}
+
+// ==================== 编辑项目功能 ====================
+async function editProject(id) {
+  const p = RAW_DATA.allProjects.find(x => x.id === id);
+  if (!p) { alert('项目不存在'); return; }
+
+  // 获取实际值（考虑 localEdits）
+  const actual = getProject(p);
+  const beforeData = {
+    '资源名称': actual.资源名称 || '',
+    '资源开始时间': actual.资源开始时间 || '',
+    '资源结束时间': actual.资源结束时间 || '',
+    '资源类型': actual.资源类型 || '',
+    '日平均工时': actual.日平均工时 || 0
+  };
+
+  const isViewer = needsApproval();
+  const title = isViewer ? '📝 申请编辑项目' : '✏️ 编辑项目';
+  const projectName = p.项目 || '未知项目';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:500px">
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      <h3>${title}</h3>
+      <p style="color:#6b7280;margin:0 0 16px 0;font-size:13px">项目：<strong>${projectName}</strong></p>
+      <div class="form-group">
+        <label>负责人</label>
+        <input type="text" id="editField_name" value="${beforeData['资源名称'] || ''}" placeholder="请输入负责人姓名">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>开始时间</label>
+          <input type="date" id="editField_start" value="${beforeData['资源开始时间'] || ''}">
+        </div>
+        <div class="form-group">
+          <label>结束时间</label>
+          <input type="date" id="editField_end" value="${beforeData['资源结束时间'] || ''}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>资源类型</label>
+          <input type="text" id="editField_type" value="${beforeData['资源类型'] || ''}" placeholder="如：开发、测试、设计">
+        </div>
+        <div class="form-group">
+          <label>日平均工时</label>
+          <input type="number" id="editField_hours" value="${beforeData['日平均工时'] || 0}" min="0" max="24" step="0.5">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+        <button class="btn" style="background:#e5e7eb;color:#374151" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        <button class="btn" style="background:#3b82f6" id="editSaveBtn">${isViewer ? '提交审批' : '保存修改'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('#editSaveBtn').onclick = async function() {
+    const afterData = {
+      '资源名称': document.getElementById('editField_name').value.trim(),
+      '资源开始时间': document.getElementById('editField_start').value,
+      '资源结束时间': document.getElementById('editField_end').value,
+      '资源类型': document.getElementById('editField_type').value.trim(),
+      '日平均工时': parseFloat(document.getElementById('editField_hours').value) || 0
+    };
+
+    // 校验：结束时间不能早于开始时间
+    if (afterData['资源开始时间'] && afterData['资源结束时间'] && afterData['资源开始时间'] > afterData['资源结束时间']) {
+      alert('❌ 结束时间不能早于开始时间');
+      return;
+    }
+
+    if (isViewer) {
+      // viewer：提交审批
+      await submitApproval('edit', [id], beforeData, afterData);
+    } else {
+      // editor/admin：直接保存
+      const editData = {};
+      for (const key in afterData) {
+        if (afterData[key] !== beforeData[key]) {
+          editData[key] = afterData[key];
+        }
+      }
+      if (Object.keys(editData).length === 0) {
+        alert('没有修改内容');
+        modal.remove();
+        return;
+      }
+      const result = await callActionApi('edit', { id: id, fields: editData });
+      if (result && result.success) {
+        updateStats();
+        renderTable();
+        initResourceSearch();
+        showSaved();
+      }
+    }
+    modal.remove();
+  };
 }
 
 // ==================== 简化方案：统一的API调用函数 ====================
@@ -3895,6 +3996,11 @@ async function archiveProject(id) {
   const p = RAW_DATA.allProjects.find(x => x.id === id);
   const name = p ? p.项目 : '此项目';
   if (confirm(`确定要归档「${name}」吗？\n归档后将不在点检列表中显示，可在「已归档」标签页恢复。`)) {
+    // 权限检查
+    if (needsApproval()) {
+      await submitApproval('archive', [id]);
+      return;
+    }
     if (collabIsEnabled()) {
       const result = await callActionApi('archive', { id: id });
       if (result && result.success) {
@@ -3920,6 +4026,14 @@ async function archiveProject(id) {
 
 // 【简化方案】恢复归档：直接调用API
 async function restoreProject(id) {
+  // 权限检查
+  if (needsApproval()) {
+    const p = RAW_DATA.allProjects.find(x => x.id === id);
+    const name = p ? p.项目 : '此项目';
+    if (!confirm(`确定要申请恢复「${name}」吗？`)) return;
+    await submitApproval('unarchive', [id]);
+    return;
+  }
   if (collabIsEnabled()) {
     const result = await callActionApi('unarchive', { id: id });
     if (result && result.success) {
@@ -3942,6 +4056,11 @@ async function restoreProject(id) {
 
 // 【简化方案】删除项目：直接调用API
 async function deleteProject(id) {
+  // 仅admin可删除
+  if (!canDelete()) {
+    alert('❌ 权限不足，仅管理员可删除项目');
+    return;
+  }
   const p = RAW_DATA.allProjects.find(x => x.id === id);
   const name = p ? p.项目 : '此项目';
   const dept = p ? p.部门 : '';

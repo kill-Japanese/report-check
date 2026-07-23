@@ -1196,6 +1196,40 @@ window.CURRENT_USER = {user_info};
             self.send_json(project_parser.get_available_features())
             return
 
+        # --- API: 审批列表（需已登录）---
+        if path == '/api/approval/list':
+            if not self.require_auth():
+                return
+            user = self.get_current_user()
+            # 从query string获取status参数
+            query = urllib.parse.parse_qs(parsed.query)
+            status_filter = query.get('status', ['all'])[0]
+            result = sync_excel.list_approvals(
+                user['username'],
+                user.get('role', ''),
+                user.get('permissions', [])
+            )
+            # 按状态过滤
+            records = result.get('records', [])
+            if status_filter == 'pending':
+                records = [r for r in records if r.get('状态') == 'pending']
+            elif status_filter == 'mine':
+                records = [r for r in records if r.get('操作人') == user['username']]
+            self.send_json({'success': True, 'records': records})
+            return
+
+        # --- API: 待审批数量（需已登录）---
+        if path == '/api/approval/count':
+            if not self.require_auth():
+                return
+            user = self.get_current_user()
+            count = sync_excel.count_pending_approvals(
+                user['username'],
+                user.get('permissions', [])
+            )
+            self.send_json({'success': True, 'count': count})
+            return
+
         # 其他静态文件
         super().do_GET()
 
