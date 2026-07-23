@@ -1357,6 +1357,246 @@ function needsApproval() {
   return collabIsEnabled() && !canEditDirectly();
 }
 
+// ==================== 审批系统前端函数 ====================
+
+// 提交审批申请
+async function submitApproval(operationType, ids, beforeData, afterData) {
+  const projects = ids.map(id => RAW_DATA.allProjects.find(x => x.id === id)).filter(Boolean);
+  const projectNames = projects.map(p => p['项目名称'] || '未知项目');
+  
+  const resp = await fetch('/api/approval/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      operation_type: operationType,
+      project_ids: ids,
+      project_names: projectNames,
+      before_data: beforeData || {},
+      after_data: afterData || {}
+    })
+  });
+  const result = await resp.json();
+  if (result.success) {
+    alert('✅ ' + result.message);
+    refreshRawData();
+  } else {
+    alert('❌ ' + result.message);
+  }
+  return result;
+}
+
+// 获取待我审批的数量
+async function getApprovalCount() {
+  if (!canApprove()) return 0;
+  try {
+    const resp = await fetch('/api/approval/count');
+    if (resp.ok) {
+      const data = await resp.json();
+      return data.count || 0;
+    }
+  } catch (e) {}
+  return 0;
+}
+
+// 获取审批列表
+async function getApprovalList(status) {
+  try {
+    const resp = await fetch('/api/approval/list?status=' + (status || 'pending'));
+    if (resp.ok) {
+      const data = await resp.json();
+      return data.records || [];
+    }
+  } catch (e) {}
+  return [];
+}
+
+// 审批通过
+async function approveRequest(opId) {
+  if (!confirm('确定通过此审批申请？')) return;
+  const resp = await fetch('/api/approval/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op_id: opId })
+  });
+  const result = await resp.json();
+  alert(result.success ? '✅ 已通过' : '❌ ' + result.message);
+  if (result.success) {
+    refreshRawData();
+    loadApprovalPanel();
+  }
+}
+
+// 审批拒绝
+async function rejectRequest(opId) {
+  const reason = prompt('请输入拒绝原因：');
+  if (reason === null) return;
+  const resp = await fetch('/api/approval/reject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op_id: opId, reason: reason || '' })
+  });
+  const result = await resp.json();
+  alert(result.success ? '✅ 已拒绝' : '❌ ' + result.message);
+  if (result.success) {
+    refreshRawData();
+    loadApprovalPanel();
+  }
+}
+
+// 更新审批按钮显示
+async function updateApprovalBadge() {
+  const btn = document.getElementById('btnApproval');
+  const countEl = document.getElementById('approvalCount');
+  if (!btn || !countEl) return;
+  
+  // 有审批权的用户才显示审批按钮
+  if (canApprove()) {
+    btn.style.display = '';
+    const count = await getApprovalCount();
+    if (count > 0) {
+      countEl.textContent = count;
+      countEl.style.display = '';
+    } else {
+      countEl.style.display = 'none';
+    }
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+// 打开审批面板
+function openApprovalPanel() {
+  const existing = document.getElementById('approvalPanelOverlay');
+  if (existing) { existing.remove(); }
+  
+  const modal = document.createElement('div');
+  modal.id = 'approvalPanelOverlay';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = \\`
+    <div class="modal-box" style="max-width:1000px;max-height:80vh;display:flex;flex-direction:column">
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      <h3>🔔 审批管理</h3>
+      
+      <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e5e7eb">
+        <button id="approvalTabPending" class="approval-tab-btn" onclick="switchApprovalTab('pending')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid #f59e0b;color:#f59e0b;font-weight:600">⏳ 待我审批</button>
+        <button id="approvalTabMine" class="approval-tab-btn" onclick="switchApprovalTab('mine')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📝 我发起的</button>
+        <button id="approvalTabAll" class="approval-tab-btn" onclick="switchApprovalTab('all')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📋 全部记录</button>
+      </div>
+      
+      <div id="approvalListContainer" style="flex:1;overflow-y:auto;min-height:300px">
+        <div style="text-align:center;color:#9ca3af;padding:40px">加载中...</div>
+      </div>
+    </div>
+  \\`;
+  document.body.appendChild(modal);
+  switchApprovalTab('pending');
+}
+
+// 切换审批Tab
+let _currentApprovalTab = 'pending';
+function switchApprovalTab(tab) {
+  _currentApprovalTab = tab;
+  
+  // 更新Tab样式
+  ['pending', 'mine', 'all'].forEach(t => {
+    const btn = document.getElementById('approvalTab' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (btn) {
+      if (t === tab) {
+        btn.style.borderBottomColor = '#f59e0b';
+        btn.style.color = '#f59e0b';
+      } else {
+        btn.style.borderBottomColor = 'transparent';
+        btn.style.color = '#6b7280';
+      }
+    }
+  });
+  
+  loadApprovalPanel();
+}
+
+// 加载审批列表
+async function loadApprovalPanel() {
+  const container = document.getElementById('approvalListContainer');
+  if (!container) return;
+  
+  let status = _currentApprovalTab;
+  if (status === 'mine') status = 'all';
+  
+  const records = await getApprovalList(status);
+  const currentUser = getCurrentUser();
+  const username = currentUser ? currentUser.username : '';
+  
+  let filtered = records;
+  if (_currentApprovalTab === 'mine') {
+    filtered = records.filter(r => r['操作人'] === username);
+  } else if (_currentApprovalTab === 'pending') {
+    filtered = records.filter(r => r['状态'] === 'pending');
+  }
+  
+  if (filtered.length === 0) {
+    container.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:40px">暂无记录</div>';
+    return;
+  }
+  
+  const opTypeMap = {
+    'archive': '归档', 'unarchive': '恢复归档', 'edit': '编辑',
+    'batch_archive': '批量归档', 'batch_unarchive': '批量恢复',
+    'delete': '删除', 'batch_delete': '批量删除'
+  };
+  const statusMap = {
+    'pending': { text: '待审批', color: '#f59e0b' },
+    'approved': { text: '已通过', color: '#10b981' },
+    'rejected': { text: '已拒绝', color: '#ef4444' }
+  };
+  
+  let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+  filtered.forEach(r => {
+    const st = statusMap[r['状态']] || { text: r['状态'], color: '#6b7280' };
+    const opType = opTypeMap[r['操作类型']] || r['操作类型'];
+    const isPending = r['状态'] === 'pending';
+    const canAct = isPending && canApprove() && r['操作人'] !== username;
+    
+    html += \\`
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;background:white">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <span style="font-weight:600;color:#111827">\\${opType}</span>
+            <span style="margin-left:8px;padding:2px 8px;border-radius:4px;background:\\${st.color};color:white;font-size:12px">\\${st.text}</span>
+          </div>
+          <span style="color:#6b7280;font-size:12px">\\${r['操作时间'] || ''}</span>
+        </div>
+        <div style="color:#374151;font-size:13px;margin-bottom:4px">
+          <strong>操作人：</strong>\\${r['操作人'] || '未知'}
+        </div>
+        <div style="color:#374151;font-size:13px;margin-bottom:4px">
+          <strong>项目：</strong>\\${(r['项目名列表'] || []).join('、') || '无'}
+        </div>
+        \\${r['审批人'] ? \\`<div style="color:#374151;font-size:13px;margin-bottom:4px"><strong>审批人：</strong>\\${r['审批人']}\\${r['审批时间'] ? ' (' + r['审批时间'] + ')' : ''}</div>\\` : ''}
+        \\${canAct ? \\`
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button class="btn" style="background:#10b981;color:white" onclick="approveRequest('\\${r['操作ID']}')">✓ 通过</button>
+            <button class="btn" style="background:#ef4444;color:white" onclick="rejectRequest('\\${r['操作ID']}')">✗ 拒绝</button>
+          </div>
+        \\` : ''}
+      </div>
+    \\`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// 更新权限相关的UI显示
+function updatePermissionUI() {
+  // 删除按钮：仅admin可见
+  const btnDelete = document.getElementById('btnBatchDelete');
+  if (btnDelete) {
+    btnDelete.style.display = canDelete() ? '' : 'none';
+  }
+  
+  // 审批按钮和红点
+  updateApprovalBadge();
+}
+
 // ==================== 统一的归档判断函数 ====================
 // 【简化方案】协作模式下只使用服务器返回的 p['已归档'] 字段
 // 非协作模式下使用本地 archived 对象（兼容）
@@ -1735,6 +1975,9 @@ function init() {
     collabLoadData().then(() => {
       updateStats();
       renderTable();
+      updatePermissionUI();
+      // 每30秒刷新审批数量
+      setInterval(updateApprovalBadge, 30000);
       initHoursPanel();
       initResourceSearch();
       initDeptFilter();
@@ -3522,6 +3765,12 @@ async function batchArchive() {
   }
   if (!confirm(`确定要批量归档选中的 ${ids.length} 个项目吗？`)) return;
   
+  // viewer需要走审批
+  if (needsApproval()) {
+    await submitApproval('batch_archive', ids);
+    return;
+  }
+  
   let done = 0;
   if (collabIsEnabled()) {
     const r = await callActionApi('batch-archive', { ids: ids });
@@ -3557,6 +3806,12 @@ async function batchRestore() {
   }
   if (!confirm(`确定要批量恢复选中的 ${ids.length} 个已归档项目吗？`)) return;
   
+  // viewer需要走审批
+  if (needsApproval()) {
+    await submitApproval('batch_unarchive', ids);
+    return;
+  }
+  
   let done = 0;
   if (collabIsEnabled()) {
     const r = await callActionApi('batch-unarchive', { ids: ids });
@@ -3582,6 +3837,11 @@ async function batchRestore() {
 
 // 批量删除（一次调用后端批量接口）
 async function batchDelete() {
+  // 仅admin可删除
+  if (!canDelete()) {
+    alert('❌ 权限不足，仅管理员可删除项目');
+    return;
+  }
   const ids = Object.keys(checked).map(Number).filter(id => {
     return RAW_DATA.allProjects.find(x => x.id === id);
   });
