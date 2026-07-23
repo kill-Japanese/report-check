@@ -3770,10 +3770,13 @@ async function editProject(id) {
   // 获取实际值（考虑 localEdits）
   const actual = getProject(p);
   const beforeData = {
+    '部门': actual.部门 || actual['部门'] || '',
+    '项目': actual.项目 || actual['项目'] || actual['项目名称'] || '',
+    '项目描述': actual.项目描述 || actual['项目描述'] || '',
+    '资源类型': actual.资源类型 || '',
     '资源名称': actual.资源名称 || '',
     '资源开始时间': actual.资源开始时间 || '',
     '资源结束时间': actual.资源结束时间 || '',
-    '资源类型': actual.资源类型 || '',
     '日平均工时': actual.日平均工时 || 0
   };
 
@@ -3822,10 +3825,13 @@ async function editProject(id) {
 
   modal.querySelector('#editSaveBtn').onclick = async function() {
     const afterData = {
+      '部门': beforeData['部门'] || '',
+      '项目': beforeData['项目'] || '',
+      '项目描述': beforeData['项目描述'] || '',
+      '资源类型': document.getElementById('editField_type').value.trim(),
       '资源名称': document.getElementById('editField_name').value.trim(),
       '资源开始时间': document.getElementById('editField_start').value,
       '资源结束时间': document.getElementById('editField_end').value,
-      '资源类型': document.getElementById('editField_type').value.trim(),
       '日平均工时': parseFloat(document.getElementById('editField_hours').value) || 0
     };
 
