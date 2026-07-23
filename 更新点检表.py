@@ -4520,7 +4520,7 @@ function renderImportPreview() {
         <td style="padding:6px"><input type="text" value="${escapeHtml(row['资源类型'] || '')}" onchange="updateImportRow(${idx}, '资源类型', this.value)" style="width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:12px"></td>
         <td style="padding:6px"><input type="date" value="${row['资源开始时间'] || ''}" onchange="updateImportRow(${idx}, '资源开始时间', this.value)" style="padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:12px"></td>
         <td style="padding:6px"><input type="date" value="${row['资源结束时间'] || ''}" onchange="updateImportRow(${idx}, '资源结束时间', this.value)" style="padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:12px"></td>
-        <td style="padding:6px"><input type="number" value="${row['日平均工时'] || 8}" min="0" max="24" step="0.5" onchange="updateImportRow(${idx}, '日平均工时', parseFloat(this.value) || 0)" style="width:70px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:12px"></td>
+        <td style="padding:6px"><input type="number" value="${(row['日平均工时'] !== undefined && row['日平均工时'] !== null && row['日平均工时'] !== '') ? row['日平均工时'] : 8}" min="0" max="24" step="0.5" onchange="updateImportRow(${idx}, '日平均工时', parseFloat(this.value) || 0)" style="width:70px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:12px"></td>
         <td style="padding:6px;text-align:center"><button class="btn btn-secondary" style="padding:2px 8px;font-size:11px" onclick="deleteImportRow(${idx})">🗑️</button></td>
       </tr>
     `;

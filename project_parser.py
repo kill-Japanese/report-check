@@ -826,7 +826,8 @@ def parse_pdf(pdf_path):
                                                 elif g1 and not g0:
                                                     return real_nums[0]
                                                 else:
-                                                    return real_nums[0] if float(real_nums[0]) > 0 else real_nums[1]
+                                                    # 0小时也是合理工时，不再因为值为0就回退
+                                                    return real_nums[0]
                                             else:
                                                 return real_nums[0]
                                 # 没换行的情况
@@ -855,10 +856,9 @@ def parse_pdf(pdf_path):
                                             return real_values[1][0]
                                         else:
                                             return real_values[0][0]
-                                    # 全是标签，取第一个非零或最后一个
-                                    non_zero = [(n, v) for n, v in valid_nums if v > 0]
-                                    if non_zero:
-                                        return non_zero[0][0]
+                                    # 全是标签，取第一个有效值（0也是合理工时）
+                                    if valid_nums:
+                                        return valid_nums[0][0]
                                     return valid_nums[-1][0]
                                 if nums:
                                     return nums[-1]
