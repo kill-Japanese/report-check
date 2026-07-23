@@ -1616,10 +1616,31 @@ async function loadApprovalPanel() {
       if (typeof beforeData === 'string') { try { beforeData = JSON.parse(beforeData); } catch(e) {} }
       if (typeof afterData === 'string') { try { afterData = JSON.parse(afterData); } catch(e) {} }
       
+      // 【新增】项目基本信息区域（始终显示，不区分是否变化）
+      const infoFields = ['部门', '项目', '项目描述', '资源类型', '资源名称'];
+      const infoValues = [];
+      for (const key of infoFields) {
+        const val = afterData[key] || beforeData[key] || '';
+        if (val !== undefined && val !== '' && val !== null) {
+          infoValues.push({ label: fieldLabelMap[key] || key, value: val });
+        }
+      }
+      if (infoValues.length > 0) {
+        editChangesHtml += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px;margin:8px 0">';
+        editChangesHtml += '<div style="font-weight:600;color:#475569;font-size:12px;margin-bottom:4px">📋 项目信息</div>';
+        editChangesHtml += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+        infoValues.forEach(f => {
+          editChangesHtml += `<span style="font-size:12px;color:#374151;background:#fff;padding:2px 8px;border-radius:4px;border:1px solid #e2e8f0"><strong>${f.label}：</strong>${f.value}</span>`;
+        });
+        editChangesHtml += '</div></div>';
+      }
+      
       const changedFields = [];
-      // 对于add类型，显示所有有值的字段
+      // 对于add类型，显示所有有值的字段（排除已显示的基本信息）
+      const infoKeys = new Set(infoFields);
       if (r['操作类型'] === 'add') {
         for (const key of Object.keys(fieldLabelMap)) {
+          if (infoKeys.has(key)) continue; // 基本信息已显示，跳过
           const val = afterData[key];
           if (val !== undefined && val !== '' && val !== null) {
             changedFields.push({
@@ -1644,10 +1665,10 @@ async function loadApprovalPanel() {
         }
       }
       
-      if (changedFields.length > 0) {
+      if (changedFields.length > 0 || r['操作类型'] === 'add') {
         const titleIcon = r['操作类型'] === 'add' ? '➕' : '📝';
         const titleText = r['操作类型'] === 'add' ? '新增内容：' : '变更内容：';
-        editChangesHtml = '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px;margin:8px 0">';
+        editChangesHtml += '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px;margin:8px 0">';
         editChangesHtml += `<div style="font-weight:600;color:#0369a1;font-size:13px;margin-bottom:6px">${titleIcon} ${titleText}</div>`;
         changedFields.forEach(f => {
           if (r['操作类型'] === 'add') {
