@@ -1595,16 +1595,21 @@ async function loadApprovalPanel() {
     
     // 字段中文名映射
     const fieldLabelMap = {
+      '部门': '部门',
+      '项目': '项目名称',
+      '项目开始时间': '项目开始时间',
+      '项目结束时间': '项目结束时间',
+      '项目描述': '项目描述',
+      '资源类型': '资源类型',
       '资源名称': '负责人',
       '资源开始时间': '开始时间',
       '资源结束时间': '结束时间',
-      '资源类型': '资源类型',
       '日平均工时': '日平均工时'
     };
     
-    // 生成编辑变更内容HTML（仅edit类型）
+    // 生成变更内容HTML（edit和add类型都显示）
     let editChangesHtml = '';
-    if (r['操作类型'] === 'edit') {
+    if (r['操作类型'] === 'edit' || r['操作类型'] === 'add') {
       let beforeData = r['变更前内容'] || {};
       let afterData = r['变更后内容'] || {};
       // 处理JSON字符串
@@ -1612,28 +1617,52 @@ async function loadApprovalPanel() {
       if (typeof afterData === 'string') { try { afterData = JSON.parse(afterData); } catch(e) {} }
       
       const changedFields = [];
-      for (const key of Object.keys(fieldLabelMap)) {
-        const beforeVal = beforeData[key];
-        const afterVal = afterData[key];
-        if (String(beforeVal) !== String(afterVal)) {
-          changedFields.push({
-            label: fieldLabelMap[key] || key,
-            before: beforeVal,
-            after: afterVal
-          });
+      // 对于add类型，显示所有有值的字段
+      if (r['操作类型'] === 'add') {
+        for (const key of Object.keys(fieldLabelMap)) {
+          const val = afterData[key];
+          if (val !== undefined && val !== '' && val !== null) {
+            changedFields.push({
+              label: fieldLabelMap[key] || key,
+              before: '',
+              after: val
+            });
+          }
+        }
+      } else {
+        // edit类型：只显示变化的字段
+        for (const key of Object.keys(fieldLabelMap)) {
+          const beforeVal = beforeData[key];
+          const afterVal = afterData[key];
+          if (String(beforeVal) !== String(afterVal)) {
+            changedFields.push({
+              label: fieldLabelMap[key] || key,
+              before: beforeVal,
+              after: afterVal
+            });
+          }
         }
       }
       
       if (changedFields.length > 0) {
+        const titleIcon = r['操作类型'] === 'add' ? '➕' : '📝';
+        const titleText = r['操作类型'] === 'add' ? '新增内容：' : '变更内容：';
         editChangesHtml = '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px;margin:8px 0">';
-        editChangesHtml += '<div style="font-weight:600;color:#0369a1;font-size:13px;margin-bottom:6px">📝 变更内容：</div>';
+        editChangesHtml += `<div style="font-weight:600;color:#0369a1;font-size:13px;margin-bottom:6px">${titleIcon} ${titleText}</div>`;
         changedFields.forEach(f => {
-          editChangesHtml += `<div style="font-size:12px;color:#374151;line-height:1.8">
-            <strong>${f.label}：</strong>
-            <span style="color:#ef4444;text-decoration:line-through">${f.before !== undefined && f.before !== '' ? f.before : '（空）'}</span>
-            <span style="color:#6b7280;margin:0 4px">→</span>
-            <span style="color:#10b981;font-weight:500">${f.after !== undefined && f.after !== '' ? f.after : '（空）'}</span>
-          </div>`;
+          if (r['操作类型'] === 'add') {
+            editChangesHtml += `<div style="font-size:12px;color:#374151;line-height:1.8">
+              <strong>${f.label}：</strong>
+              <span style="color:#10b981;font-weight:500">${f.after}</span>
+            </div>`;
+          } else {
+            editChangesHtml += `<div style="font-size:12px;color:#374151;line-height:1.8">
+              <strong>${f.label}：</strong>
+              <span style="color:#ef4444;text-decoration:line-through">${f.before !== undefined && f.before !== '' ? f.before : '（空）'}</span>
+              <span style="color:#6b7280;margin:0 4px">→</span>
+              <span style="color:#10b981;font-weight:500">${f.after !== undefined && f.after !== '' ? f.after : '（空）'}</span>
+            </div>`;
+          }
         });
         editChangesHtml += '</div>';
       }
