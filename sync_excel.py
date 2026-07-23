@@ -30,7 +30,10 @@ HTML_FILE = os.path.join(BASE_DIR, '项目延期点检表.html')
 # 注意：openpyxl写入时使用 1-based 列号，所以 COL_ARCHIVED+1 = 第2列(B列)
 COL_ARCHIVED = 0   # 第1列(A列)用于存放归档标志（原U列/20，改为A列/0，避免覆盖公式）
 COL_DELETED = 1    # 第2列(B列)用于存放删除标志（原V列/21，改为B列/1，软删除避免合并单元格破坏）
-COL_APPROVAL_STATUS = 23  # 第24列(X列)用于存放审批状态标识（空=正常，PENDING_* = 待审批）
+COL_APPROVAL_STATUS = 23    # 第24列(X列) 审批状态: PENDING_ARCHIVE / PENDING_UNARCHIVE / PENDING_EDIT / 空
+COL_APPROVAL_SUBMITTER = 24 # 第25列(Y列) 申请人|申请时间: 格式 "username|2026-07-23T10:00:00"
+COL_APPROVAL_DETAIL = 25    # 第26列(Z列) 变更内容(JSON): 编辑时使用 {"负责人":"张三→李四","工时":"5→8"}
+COL_APPROVAL_TYPE = 26      # 第27列(AA列) 操作类型: archive / unarchive / edit
 
 # 操作记录Sheet配置
 OPERATIONS_SHEET = '操作记录'
@@ -1775,56 +1778,101 @@ def _update_operation(op_id, updates):
     print(f'[操作记录] 已更新: {op_id}')
 
 
-def _set_approval_status(project_ids, status):
-    """批量设置X列审批状态
+def _write_approval_row(project_id, status, submitter, op_type, detail=''):
+    """写入/清除单条审批信息到任务计划表的X/Y/Z/AA列
     
     Args:
-        project_ids: list，项目ID列表
-        status: str，审批状态值（PENDING_ARCHIVE/PENDING_UNARCHIVE/PENDING_EDIT）
+        project_id: 项目ID (int)
+        status: 审批状态 (PENDING_* 或 空字符串表示清除)
+        submitter: 申请人用户名
+        op_type: 操作类型 (archive/unarchive/edit)
+        detail: 变更内容(JSON字符串，仅edit用)
     """
     from openpyxl import load_workbook
+    from datetime import datetime
     wb = load_workbook(EXCEL_FILE)
     ws = wb['任务计划表']
     
-    for pid in project_ids:
-        try:
-            row_num = int(pid) + 2  # id从0开始，第1行是表头，id=0对应第2行
-            if 2 <= row_num <= ws.max_row:
-                ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1, value=status)
-        except Exception as e:
-            print(f'[审批] 设置ID={pid}状态失败: {e}')
+    row_num = int(project_id) + 2  # id从0开始，第1行是表头，id=0对应第2行
+    if 2 <= row_num <= ws.max_row:
+        ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1, value=status)
+        if status:
+            # 写入审批信息
+            submitter_info = f"{submitter}|{datetime.now().isoformat()}"
+            ws.cell(row=row_num, column=COL_APPROVAL_SUBMITTER + 1, value=submitter_info)
+            ws.cell(row=row_num, column=COL_APPROVAL_TYPE + 1, value=op_type)
+            if detail:
+                ws.cell(row=row_num, column=COL_APPROVAL_DETAIL + 1, value=detail)
+        else:
+            # 清除审批信息
+            ws.cell(row=row_num, column=COL_APPROVAL_SUBMITTER + 1, value='')
+            ws.cell(row=row_num, column=COL_APPROVAL_TYPE + 1, value='')
+            ws.cell(row=row_num, column=COL_APPROVAL_DETAIL + 1, value='')
     
     wb.save(EXCEL_FILE)
     wb.close()
     invalidate_projects_cache()
 
 
-def _clear_approval_status(project_ids):
-    """批量清空X列审批状态"""
-    _set_approval_status(project_ids, '')
+def _read_approval_row(project_id):
+    """读取单条审批信息
+    
+    Returns:
+        dict or None: {status, submitter, submit_time, op_type, detail}
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(EXCEL_FILE, data_only=True)
+    ws = wb['任务计划表']
+    
+    row_num = int(project_id) + 2
+    if row_num < 2 or row_num > ws.max_row:
+        wb.close()
+        return None
+    
+    status = ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1).value or ''
+    submitter_raw = ws.cell(row=row_num, column=COL_APPROVAL_SUBMITTER + 1).value or ''
+    op_type = ws.cell(row=row_num, column=COL_APPROVAL_TYPE + 1).value or ''
+    detail = ws.cell(row=row_num, column=COL_APPROVAL_DETAIL + 1).value or ''
+    
+    wb.close()
+    
+    if not status:
+        return None
+    
+    submitter = ''
+    submit_time = ''
+    if submitter_raw and '|' in submitter_raw:
+        parts = submitter_raw.split('|', 1)
+        submitter = parts[0]
+        submit_time = parts[1] if len(parts) > 1 else ''
+    
+    return {
+        'status': status,
+        'submitter': submitter,
+        'submit_time': submit_time,
+        'op_type': op_type,
+        'detail': detail,
+    }
 
 
 def submit_approval(approval_data, operator):
-    """提交审批申请
+    """提交审批申请（简化版：直接写任务计划表X/Y/Z/AA列）
     
     Args:
         approval_data: dict，包含：
-            - operation_type: 操作类型 (archive/unarchive/edit/batch_archive/batch_unarchive)
+            - operation_type: 操作类型
             - project_ids: 项目ID列表
-            - project_names: 项目名列表
-            - before_data: 变更前内容（edit操作）
-            - after_data: 变更后内容（edit操作）
+            - project_names: 项目名列表（保留兼容）
+            - before_data: 变更前内容（保留兼容）
+            - after_data: 变更后内容（edit操作用）
         operator: 操作人用户名
-    
-    Returns:
-        tuple: (success: bool, message: str, op_id: str)
     """
     try:
+        import json
         op_type = approval_data.get('operation_type', '')
         project_ids = approval_data.get('project_ids', [])
-        project_names = approval_data.get('project_names', [])
+        after_data = approval_data.get('after_data', {})
         
-        # 确定X列状态值
         status_map = {
             'archive': 'PENDING_ARCHIVE',
             'unarchive': 'PENDING_UNARCHIVE',
@@ -1833,43 +1881,41 @@ def submit_approval(approval_data, operator):
             'batch_unarchive': 'PENDING_UNARCHIVE',
         }
         x_status = status_map.get(op_type, '')
+        if not x_status:
+            return False, f'不支持的操作类型: {op_type}', ''
         
-        # 设置X列状态
-        if x_status:
-            _set_approval_status(project_ids, x_status)
+        # 变更内容转JSON（仅编辑用）
+        detail_json = ''
+        if op_type == 'edit' and after_data:
+            detail_json = json.dumps(after_data, ensure_ascii=False)
         
-        # 写操作记录
+        # 逐行写入审批信息
+        for pid in project_ids:
+            _write_approval_row(pid, x_status, operator, op_type, detail_json)
+        
+        # 同时写操作记录（审计用，不参与核心流程）
         op_data = {
             '操作时间': datetime.now().isoformat(),
             '操作人': operator,
             '操作类型': op_type,
             '项目ID列表': project_ids,
-            '项目名列表': project_names,
+            '项目名列表': approval_data.get('project_names', []),
             '变更前内容': approval_data.get('before_data', {}),
-            '变更后内容': approval_data.get('after_data', {}),
+            '变更后内容': after_data,
             '状态': 'pending',
         }
         op_id = _append_operation(op_data)
         
-        return True, f'审批申请已提交，等待审批（操作ID: {op_id}）', op_id
+        return True, f'审批申请已提交，等待审批', op_id
     except Exception as e:
         return False, f'提交审批失败: {str(e)}', ''
 
 
 def approve_operation(op_id, approver, comment=''):
-    """通过审批（触发实际的归档/编辑操作）
-    
-    Args:
-        op_id: 操作ID
-        approver: 审批人用户名
-        comment: 审批意见
-    
-    Returns:
-        tuple: (success: bool, message: str)
-    """
+    """通过审批（简化版：从任务计划表读取审批信息，执行操作，清除列）"""
     from datetime import datetime
     try:
-        # 读取操作记录
+        # 先从操作记录找到项目ID
         ops = _load_operations_sheet()
         op = next((o for o in ops if o.get('操作ID') == op_id), None)
         if not op:
@@ -1882,11 +1928,8 @@ def approve_operation(op_id, approver, comment=''):
         project_ids = op.get('项目ID列表', [])
         if isinstance(project_ids, str):
             project_ids = json.loads(project_ids)
-        after_data = op.get('变更后内容', {})
-        if isinstance(after_data, str) and after_data:
-            after_data = json.loads(after_data)
         
-        # 根据操作类型执行实际操作
+        # 执行实际操作
         ok = True
         msg = ''
         if op_type in ('archive', 'batch_archive'):
@@ -1904,6 +1947,9 @@ def approve_operation(op_id, approver, comment=''):
                 ok = result.get('success', False)
                 msg = result.get('message', '')
         elif op_type == 'edit':
+            after_data = op.get('变更后内容', {})
+            if isinstance(after_data, str) and after_data:
+                after_data = json.loads(after_data)
             if project_ids and after_data:
                 ok, msg = action_edit_project(project_ids[0], after_data, approver)
             else:
@@ -1914,15 +1960,15 @@ def approve_operation(op_id, approver, comment=''):
         if not ok:
             return False, f'执行操作失败: {msg}'
         
-        # 清空X列审批状态
-        _clear_approval_status(project_ids)
+        # 清除任务计划表的审批列
+        for pid in project_ids:
+            _write_approval_row(pid, '', '', '', '')
         
         # 更新操作记录
         _update_operation(op_id, {
             '状态': 'approved',
             '审批人': approver,
             '审批时间': datetime.now().isoformat(),
-            '变更后内容': {'审批意见': comment} if comment else {},
         })
         
         return True, f'审批通过，操作已生效: {msg}'
@@ -1931,19 +1977,9 @@ def approve_operation(op_id, approver, comment=''):
 
 
 def reject_operation(op_id, approver, comment=''):
-    """拒绝审批
-    
-    Args:
-        op_id: 操作ID
-        approver: 审批人用户名
-        comment: 拒绝原因
-    
-    Returns:
-        tuple: (success: bool, message: str)
-    """
+    """拒绝审批（简化版）"""
     from datetime import datetime
     try:
-        # 读取操作记录
         ops = _load_operations_sheet()
         op = next((o for o in ops if o.get('操作ID') == op_id), None)
         if not op:
@@ -1956,8 +1992,9 @@ def reject_operation(op_id, approver, comment=''):
         if isinstance(project_ids, str):
             project_ids = json.loads(project_ids)
         
-        # 清空X列审批状态
-        _clear_approval_status(project_ids)
+        # 清除任务计划表的审批列
+        for pid in project_ids:
+            _write_approval_row(pid, '', '', '', '')
         
         # 更新操作记录
         _update_operation(op_id, {
@@ -1973,15 +2010,7 @@ def reject_operation(op_id, approver, comment=''):
 
 
 def cancel_operation(op_id, operator):
-    """撤回审批申请（仅申请人本人可撤回，且状态为pending）
-    
-    Args:
-        op_id: 操作ID
-        operator: 操作人用户名
-    
-    Returns:
-        tuple: (success: bool, message: str)
-    """
+    """撤回审批申请（简化版）"""
     from datetime import datetime
     try:
         ops = _load_operations_sheet()
@@ -1993,12 +2022,14 @@ def cancel_operation(op_id, operator):
         if op.get('状态') != 'pending':
             return False, f'该操作状态不是待审批，无法撤回（当前状态: {op.get("状态")}）'
         
-        # 清除X列的审批状态
         import json
         project_ids = op.get('项目ID列表', [])
         if isinstance(project_ids, str):
             project_ids = json.loads(project_ids)
-        _set_approval_status(project_ids, '')
+        
+        # 清除任务计划表的审批列
+        for pid in project_ids:
+            _write_approval_row(pid, '', '', '', '')
         
         # 更新操作记录
         _update_operation(op_id, {
@@ -2014,33 +2045,102 @@ def cancel_operation(op_id, operator):
 
 
 def list_approvals(user, role, permissions):
-    """获取审批列表（按角色过滤）
+    """获取审批列表（简化版：从任务计划表X列过滤 + 操作记录补充）
     
-    Args:
-        user: 当前用户名
-        role: 当前用户角色
-        permissions: 当前用户权限列表
-    
-    Returns:
-        dict: {
-            pending_for_me: [],   # 待我审批的
-            my_submissions: [],    # 我发起的
-        }
+    核心逻辑：
+    - 待审批：扫描任务计划表X列不为空的行（即状态为PENDING_*）
+    - 我发起的：从操作记录过滤操作人=当前用户
     """
-    ops = _load_operations_sheet()
+    from openpyxl import load_workbook
+    import json
     
     can_approve = 'approve' in permissions
     
+    # === Part 1: 从任务计划表读取待审批项目 ===
     pending_for_me = []
-    my_submissions = []
+    if can_approve:
+        wb = load_workbook(EXCEL_FILE, data_only=True)
+        ws = wb['任务计划表']
+        
+        # 找项目名列（D列=3，或兼容其他列）
+        project_name_col = 3  # 默认D列
+        headers = [cell.value for cell in ws[1]]
+        for i, h in enumerate(headers):
+            if h and ('项目' in str(h) and '名' in str(h)):
+                project_name_col = i
+                break
+        
+        # 预加载操作记录，用于匹配真实的操作ID
+        all_ops = _load_operations_sheet()
+        pending_ops = [o for o in all_ops if o.get('状态') == 'pending']
+        
+        def _find_op_id(project_id, op_type, submitter):
+            """从操作记录中找到匹配的操作ID"""
+            import json as _json
+            for o in pending_ops:
+                if o.get('操作类型') != op_type:
+                    continue
+                if o.get('操作人') != submitter:
+                    continue
+                pids = o.get('项目ID列表', [])
+                if isinstance(pids, str):
+                    try:
+                        pids = _json.loads(pids)
+                    except:
+                        pids = []
+                if int(project_id) in [int(p) for p in pids]:
+                    return o.get('操作ID', '')
+            return ''
+        
+        for row_num in range(2, ws.max_row + 1):
+            status = ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1).value or ''
+            if not status:
+                continue
+            
+            submitter_raw = ws.cell(row=row_num, column=COL_APPROVAL_SUBMITTER + 1).value or ''
+            op_type = ws.cell(row=row_num, column=COL_APPROVAL_TYPE + 1).value or ''
+            detail = ws.cell(row=row_num, column=COL_APPROVAL_DETAIL + 1).value or ''
+            
+            submitter = ''
+            submit_time = ''
+            if submitter_raw and '|' in submitter_raw:
+                parts = submitter_raw.split('|', 1)
+                submitter = parts[0]
+                submit_time = parts[1] if len(parts) > 1 else ''
+            
+            project_id = row_num - 2
+            project_name = ws.cell(row=row_num, column=project_name_col + 1).value or f'项目{project_id}'
+            
+            # 匹配真实的操作ID
+            real_op_id = _find_op_id(project_id, op_type, submitter)
+            
+            # 解析变更内容
+            after_data = {}
+            if detail:
+                try:
+                    after_data = json.loads(detail) if isinstance(detail, str) else detail
+                except:
+                    pass
+            
+            pending_for_me.append({
+                '操作ID': real_op_id or f'ROW-{project_id}',
+                '操作时间': submit_time,
+                '操作人': submitter,
+                '操作类型': op_type,
+                '项目ID列表': [project_id],
+                '项目名列表': [str(project_name)],
+                '变更前内容': {},
+                '变更后内容': after_data,
+                '状态': 'pending',
+                '审批人': '',
+                '审批时间': '',
+            })
+        
+        wb.close()
     
-    for op in ops:
-        # 我发起的
-        if op.get('操作人') == user:
-            my_submissions.append(op)
-        # 待我审批的（只有有审批权的人才能看到）
-        if can_approve and op.get('状态') == 'pending':
-            pending_for_me.append(op)
+    # === Part 2: 从操作记录读取"我发起的" ===
+    ops = _load_operations_sheet()
+    my_submissions = [o for o in ops if o.get('操作人') == user]
     
     return {
         'pending_for_me': pending_for_me,
@@ -2049,11 +2149,22 @@ def list_approvals(user, role, permissions):
 
 
 def count_pending_approvals(user, permissions):
-    """获取待我审批的数量"""
+    """获取待我审批的数量（简化版：扫描任务计划表X列）"""
     if 'approve' not in permissions:
         return 0
-    ops = _load_operations_sheet()
-    return sum(1 for o in ops if o.get('状态') == 'pending')
+    
+    from openpyxl import load_workbook
+    wb = load_workbook(EXCEL_FILE, data_only=True)
+    ws = wb['任务计划表']
+    
+    count = 0
+    for row_num in range(2, ws.max_row + 1):
+        status = ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1).value or ''
+        if status:
+            count += 1
+    
+    wb.close()
+    return count
 
 
 def list_operations(user, permissions, filters=None):
