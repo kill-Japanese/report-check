@@ -169,3 +169,26 @@
 [2026-07-23 07:27:05] DATA_SYNC | 用户: tjs | 数据同步更新
 [2026-07-23 07:27:11] DATA_SYNC | 用户: tjs | 数据同步更新
 [2026-07-23 07:28:31] LOGIN | 用户: xjq | 登录成功
+[2026-07-23 07:28:52] USER_CREATE | 用户: admin | 创建用户: mwh, 角色: viewer
+[2026-07-23 07:31:05] LOGIN | 用户: mwh | 登录成功
+[2026-07-23 07:38:33] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-23 07:48:03] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-23 07:48:35] SESSION_CLEANUP | 用户: system | 清理了 2 个过期 Session
+[2026-07-23 07:56:30] APPROVAL_SUBMIT | 用户: mwh | : edit
+[2026-07-23 07:56:31] APPROVAL_SUBMIT | 用户: mwh | : edit
+[2026-07-23 07:56:31] APPROVAL_SUBMIT | 用户: mwh | : edit
+[2026-07-23 07:56:31] APPROVAL_SUBMIT | 用户: mwh | : edit
+[2026-07-23 07:56:34] APPROVAL_SUBMIT | 用户: mwh | : edit
+[2026-07-23 07:56:34] APPROVAL_SUBMIT | 用户: mwh | : edit
+[2026-07-23 07:56:34] APPROVAL_SUBMIT | 用户: mwh | : edit
+[2026-07-23 07:56:34] APPROVAL_SUBMIT | 用户: mwh | : edit
+[2026-07-23 07:56:37] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-007: edit
+[2026-07-23 07:58:56] APPROVAL_SUBMIT | 用户: mwh | : edit
+[2026-07-23 07:58:56] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-008: edit
+[2026-07-23 07:59:32] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-009: edit
+[2026-07-23 08:03:11] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-010: archive
+[2026-07-23 08:03:16] APPROVAL_SUBMIT | 用户: mwh | OP-20260723-011: archive
+[2026-07-23 08:16:00] LOGIN | 用户: xjq | 登录成功
+[2026-07-23 08:17:28] LOGIN | 用户: xjq | 登录成功
+[2026-07-23 08:17:45] LOGIN | 用户: mwh | 登录成功
+[2026-07-23 08:18:21] LOGIN | 用户: xjq | 登录成功
