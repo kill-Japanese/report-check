@@ -3328,7 +3328,7 @@ function toggleCheck(id, isChecked) {
   else delete checked[id];
   localStorage.setItem('projectChecked', JSON.stringify(checked));
   updateSelectionCount();
-  showSaved();
+  // 勾选是本地操作，不需要同步到服务器
 }
 
 function updateSelectionCount() {
@@ -3351,7 +3351,7 @@ function selectAllVisible() {
   localStorage.setItem('projectChecked', JSON.stringify(checked));
   renderTable();
   updateSelectionCount();
-  if (added > 0) showSaved();
+  // 全选是本地操作，不需要同步到服务器
 }
 
 function clearSelection() {
