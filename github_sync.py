@@ -335,13 +335,30 @@ CRITICAL_FILES = [
 ]
 
 
+def _get_excel_row_count(filepath: str) -> int:
+    """获取Excel文件的任务计划表行数"""
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(filepath, read_only=True)
+        ws = wb['任务计划表']
+        count = ws.max_row
+        wb.close()
+        return count
+    except:
+        return 0
+
+
 def github_api_pull() -> tuple[bool, str]:
     """
     从 GitHub 拉取所有关键文件（替代 git pull）
-    返回: (成功, 消息)
+    
+    【关键修复】对于Excel文件，比较行数：
+    - 本地行数 > 远程行数 → 不覆盖（本地有新增数据）
+    - 本地行数 <= 远程行数 → 正常同步
     """
     messages = []
     restored = []
+    import tempfile
     
     for filename in CRITICAL_FILES:
         filepath = os.path.join(BASE_DIR, filename)
@@ -349,6 +366,27 @@ def github_api_pull() -> tuple[bool, str]:
         
         ok, content, _ = github_api_get_file(filename)
         if ok and content:
+            # 【关键修复】对于Excel文件，比较行数后再决定是否覆盖
+            if filename.endswith('.xlsx') and existed_before:
+                try:
+                    local_rows = _get_excel_row_count(filepath)
+                    # 写入临时文件比较远程行数
+                    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tf:
+                        tf.write(content)
+                        temp_path = tf.name
+                    remote_rows = _get_excel_row_count(temp_path)
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
+                    
+                    if local_rows > remote_rows:
+                        print(f'[github_api_pull] 跳过{filename}: 本地{local_rows}行 > 远程{remote_rows}行（本地有新增数据）')
+                        messages.append(f'{filename}(跳过:本地数据更新)')
+                        continue
+                except Exception as e:
+                    print(f'[github_api_pull] 行数比较失败，正常覆盖: {e}')
+            
             with open(filepath, 'wb') as f:
                 f.write(content)
             if not existed_before:
