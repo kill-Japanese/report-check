@@ -1164,8 +1164,7 @@ def parse_pdf(pdf_path):
                 'warnings': debug_info
             }
         
-        # 按ID排序
-        all_tasks.sort(key=lambda t: t['id'])
+        # 注意：不按ID排序，保持PDF原文档的行顺序
         
         # 检查是否有显式project行，没有的话把首个顶级任务标记为project
         has_project = any(re.match(r'^project[:：]', t['name'], re.I) for t in all_tasks)
