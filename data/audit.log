@@ -167,3 +167,7 @@
 [2026-07-23 06:29:36] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
 [2026-07-23 06:29:43] DATA_SYNC | 用户: xjq | 数据同步更新
 [2026-07-23 06:29:50] PROJECT_UNARCHIVE | 用户: xjq | ID=54: 取消归档项目成功; ID=54; （报表和同步正在后台执行）
+[2026-07-23 06:29:54] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-23 06:30:41] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
+[2026-07-23 06:30:54] IMPORT_COMMIT | 用户: xjq | 批量导入 14 条
+[2026-07-23 06:30:58] DATA_SYNC | 用户: xjq | 数据同步更新
