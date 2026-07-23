@@ -16,6 +16,7 @@ import threading
 from datetime import datetime
 import pandas as pd
 from openpyxl import load_workbook
+import auth
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
@@ -1969,6 +1970,47 @@ def reject_operation(op_id, approver, comment=''):
         return True, '审批已拒绝'
     except Exception as e:
         return False, f'拒绝审批失败: {str(e)}'
+
+
+def cancel_operation(op_id, operator):
+    """撤回审批申请（仅申请人本人可撤回，且状态为pending）
+    
+    Args:
+        op_id: 操作ID
+        operator: 操作人用户名
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    from datetime import datetime
+    try:
+        ops = _load_operations_sheet()
+        op = next((o for o in ops if o.get('操作ID') == op_id), None)
+        if not op:
+            return False, f'操作记录不存在: {op_id}'
+        if op.get('操作人') != operator:
+            return False, '仅申请人本人可撤回'
+        if op.get('状态') != 'pending':
+            return False, f'该操作状态不是待审批，无法撤回（当前状态: {op.get("状态")}）'
+        
+        # 清除X列的审批状态
+        import json
+        project_ids = op.get('项目ID列表', [])
+        if isinstance(project_ids, str):
+            project_ids = json.loads(project_ids)
+        _set_approval_status(project_ids, '')
+        
+        # 更新操作记录
+        _update_operation(op_id, {
+            '状态': 'cancelled',
+            '审批人': operator,
+            '审批时间': datetime.now().isoformat(),
+        })
+        
+        auth._audit_log('APPROVAL_CANCEL', operator, f'{op_id}: 撤回审批申请')
+        return True, '已撤回审批申请'
+    except Exception as e:
+        return False, f'撤回失败: {str(e)}'
 
 
 def list_approvals(user, role, permissions):

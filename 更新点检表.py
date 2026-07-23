@@ -1362,7 +1362,8 @@ function needsApproval() {
 // 提交审批申请
 async function submitApproval(operationType, ids, beforeData, afterData) {
   const projects = ids.map(id => RAW_DATA.allProjects.find(x => x.id === id)).filter(Boolean);
-  const projectNames = projects.map(p => p['项目'] || p['项目名称'] || '未知项目');
+  const projectNames = projects.map(p => (p['项目'] || p['项目名称'] || '').trim()).filter(n => n);
+  if (projectNames.length === 0) projectNames.push('未知项目');
   
   const resp = await fetch('/api/approval/submit', {
     method: 'POST',
@@ -1437,6 +1438,22 @@ async function rejectRequest(opId) {
   });
   const result = await resp.json();
   alert(result.success ? '✅ 已拒绝' : '❌ ' + result.message);
+  if (result.success) {
+    refreshRawData();
+    loadApprovalPanel();
+  }
+}
+
+// 撤回审批申请
+async function cancelRequest(opId) {
+  if (!confirm('确定要撤回这条审批申请吗？')) return;
+  const resp = await fetch('/api/approval/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op_id: opId })
+  });
+  const result = await resp.json();
+  alert(result.success ? '✅ 已撤回' : '❌ ' + result.message);
   if (result.success) {
     refreshRawData();
     loadApprovalPanel();
@@ -1558,7 +1575,8 @@ async function loadApprovalPanel() {
   const statusMap = {
     'pending': { text: '待审批', color: '#f59e0b' },
     'approved': { text: '已通过', color: '#10b981' },
-    'rejected': { text: '已拒绝', color: '#ef4444' }
+    'rejected': { text: '已拒绝', color: '#ef4444' },
+    'cancelled': { text: '已撤回', color: '#6b7280' }
   };
   
   let html = '<div style="display:flex;flex-direction:column;gap:8px">';
@@ -1567,6 +1585,7 @@ async function loadApprovalPanel() {
     const opType = opTypeMap[r['操作类型']] || r['操作类型'];
     const isPending = r['状态'] === 'pending';
     const canAct = isPending && canApprove() && r['操作人'] !== username;
+    const canCancel = isPending && r['操作人'] === username;
     
     html += `
       <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;background:white">
@@ -1588,6 +1607,11 @@ async function loadApprovalPanel() {
           <div style="margin-top:8px;display:flex;gap:8px">
             <button class="btn" style="background:#10b981;color:white" onclick="approveRequest('${r['操作ID']}')">✓ 通过</button>
             <button class="btn" style="background:#ef4444;color:white" onclick="rejectRequest('${r['操作ID']}')">✗ 拒绝</button>
+          </div>
+        ` : ''}
+        ${canCancel ? `
+          <div style="margin-top:8px">
+            <button class="btn" style="background:#6b7280;color:white" onclick="cancelRequest('${r['操作ID']}')">↩️ 撤回申请</button>
           </div>
         ` : ''}
       </div>

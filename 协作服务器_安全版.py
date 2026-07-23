@@ -1635,6 +1635,16 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': ok, 'message': msg})
             return
 
+        # --- 撤回审批申请（需 submit_approval 权限，仅本人）---
+        if path == '/api/approval/cancel':
+            if not self.require_permission('submit_approval'):
+                return
+            user = self.get_current_user()
+            op_id = data.get('op_id', '')
+            ok, msg = sync_excel.cancel_operation(op_id, user['username'])
+            self.send_json({'success': ok, 'message': msg})
+            return
+
         # --- 获取待审批数量（需已登录）---
         if path == '/api/approval/count':
             if not self.require_auth():
