@@ -585,49 +585,64 @@ def parse_pdf(pdf_path):
             'resources': []
         }
     
-    def _is_gray_color(color):
-        """判断颜色是否为灰色（RGB各分量接近相等，且亮度低于阈值）
-        返回 True 表示是灰色/浅色文字，应被过滤
+    def _is_black_color(color):
+        """判断颜色是否为黑色/深色（正文颜色）
+        白名单模式：只保留黑色字体，其他颜色（灰色、彩色、浅色）全部过滤
+        
+        PDF中字体颜色的可能格式：
+        - RGB元组: (0, 0, 0) = 黑色, (0.5, 0.5, 0.5) = 灰色
+        - CMYK元组: (0, 0, 0, 0) 或 (0, 0, 0, 1) = 黑色
+        - 灰度元组: (0,) = 黑色, (0.5,) = 灰色
+        - None: 无颜色信息，当作黑色保留
         """
-        if not color:
-            return False  # 无颜色信息，不过滤（默认黑色）
+        if color is None:
+            return True  # 无颜色信息，保留（默认黑色）
         try:
-            # color 通常是元组，如 (0.7, 0.7, 0.7) 或 CMYK (0, 0, 0, 0.3)
             if isinstance(color, (list, tuple)):
-                if len(color) == 3:
-                    # RGB: 灰色 = R ≈ G ≈ B，且值不在黑色范围(0~0.3)内
-                    r, g, b = color
-                    if r < 0 and g < 0 and b < 0:
-                        return False  # 负值通常是特殊标记
-                    # 判断灰度：RGB差值都很小
-                    diff = max(r, g, b) - min(r, g, b)
-                    avg = (r + g + b) / 3
-                    if diff < 0.15 and avg > 0.3:
-                        return True  # 明显的灰色
-                    # 很浅的颜色（接近白色）
-                    if avg > 0.85:
-                        return True
-                    return False
-                elif len(color) == 4:
-                    # CMYK: 灰色 = C≈M≈Y≈0, K较高
-                    c, m, y, k = color
-                    if c < 0.1 and m < 0.1 and y < 0.1 and k > 0.15:
-                        return True
-                    return False
-                elif len(color) == 1:
+                if len(color) == 0:
+                    return True  # 空元组，保留
+                if len(color) == 1:
                     # 灰度值: 0=黑, 1=白
                     v = color[0]
-                    if 0.3 < v < 1.0:
+                    return v <= 0.2  # 只保留很深的颜色（接近黑色）
+                if len(color) == 3:
+                    # RGB
+                    r, g, b = color
+                    # 判断是否为黑色或极深色
+                    # 黑色: 所有分量都很小
+                    avg = (r + g + b) / 3
+                    if avg <= 0.2:
+                        return True
+                    # 深色但不是纯黑：检查是否为彩色（至少一个分量明显高于其他）
+                    max_val = max(r, g, b)
+                    min_val = min(r, g, b)
+                    diff = max_val - min_val
+                    # 如果是彩色（RGB差异大），也保留（避免误删蓝色标题等）
+                    if diff > 0.15 and max_val <= 0.5:
                         return True
                     return False
+                if len(color) == 4:
+                    # CMYK
+                    c, m, y, k = color
+                    # 黑色: C=M=Y=0 或 K很高
+                    if k >= 0.8:
+                        return True
+                    # 几乎没有彩色分量且有一定黑色
+                    if c < 0.1 and m < 0.1 and y < 0.1 and k < 0.3:
+                        return True  # 接近黑色
+                    # 纯黑: C=M=Y=K=0 在某些PDF中也是黑色
+                    if c < 0.05 and m < 0.05 and y < 0.05 and k < 0.05:
+                        return True
+                    return False
+            elif isinstance(color, (int, float)):
+                # 单个数值，当作灰度
+                return color <= 0.2
         except:
-            pass
+            return True  # 无法判断颜色时保留
         return False
     
     def _build_gray_char_regions(page):
-        """收集页面上所有灰色字体字符的坐标区域，返回用于后续过滤的矩形列表
-        每个矩形用 (x0, y0, x1, y1) 表示，带少许扩展容差
-        """
+        """收集页面上所有非黑色字体字符的坐标区域，返回用于后续过滤的矩形列表"""
         gray_regions = []
         try:
             chars = page.chars
@@ -635,10 +650,10 @@ def parse_pdf(pdf_path):
                 return gray_regions
             for ch in chars:
                 color = ch.get('non_stroking_color')
-                if _is_gray_color(color):
+                if not _is_black_color(color):
                     gray_regions.append((ch['x0'], ch['top'], ch['x1'], ch['bottom']))
         except Exception as e:
-            print(f'[PDF] 收集灰色字符区域失败: {e}')
+            print(f'[PDF] 收集非黑色字符区域失败: {e}')
         return gray_regions
     
     try:
@@ -652,25 +667,25 @@ def parse_pdf(pdf_path):
                 gray_char_cache = _build_gray_char_regions(page)
                 gray_filtered = False
                 if gray_char_cache:
-                    debug_info.append(f'第{page_idx+1}页: 检测到{len(gray_char_cache)}个灰色字符，尝试过滤')
-                    # 过滤 page.chars：排除灰色字符
+                    debug_info.append(f'第{page_idx+1}页: 检测到{len(gray_char_cache)}个非黑色字符，尝试过滤')
+                    # 过滤 page.chars：排除非黑色字符
                     try:
                         original_chars = page.chars
                         filtered_chars = [
                             ch for ch in original_chars
-                            if not _is_gray_color(ch.get('non_stroking_color'))
+                            if _is_black_color(ch.get('non_stroking_color'))
                         ]
                         if len(filtered_chars) < len(original_chars):
                             removed_count = len(original_chars) - len(filtered_chars)
-                            debug_info.append(f'第{page_idx+1}页: 已过滤{removed_count}个灰色字符，剩余{len(filtered_chars)}个字符')
+                            debug_info.append(f'第{page_idx+1}页: 已过滤{removed_count}个非黑色字符，剩余{len(filtered_chars)}个字符')
                             # 替换 page 的 chars 缓存，后续 extract_tables 将使用过滤后的字符
                             page._chars = filtered_chars
                             page.flush_cache()
                             gray_filtered = True
                         else:
-                            debug_info.append(f'第{page_idx+1}页: 灰色字符过滤未生效（可能颜色格式不匹配）')
+                            debug_info.append(f'第{page_idx+1}页: 非黑色字符过滤未生效（可能颜色格式不匹配）')
                     except Exception as e:
-                        debug_info.append(f'第{page_idx+1}页: 灰色字符过滤失败: {e}')
+                        debug_info.append(f'第{page_idx+1}页: 非黑色字符过滤失败: {e}')
                 
                 # 尝试多种表格提取策略
                 all_tables_attempts = []
