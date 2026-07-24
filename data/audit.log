@@ -204,3 +204,15 @@
 [2026-07-24 07:45:34] DATA_SYNC | 用户: xjq | 数据同步更新
 [2026-07-24 07:46:01] PROJECT_EDIT | 用户: xjq | ID=24: 编辑项目成功; ID=24; （报表和同步正在后台执行）
 [2026-07-24 07:46:05] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-24 08:08:35] LOGIN | 用户: ycx | 登录成功
+[2026-07-24 08:10:52] DATA_SYNC | 用户: ycx | 数据同步更新
+[2026-07-24 08:11:34] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
+[2026-07-24 08:11:50] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
+[2026-07-24 08:11:58] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
+[2026-07-24 09:48:57] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-24 10:01:38] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-24 10:36:37] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-24 12:42:40] LOGIN | 用户: dajinyu | 登录成功
+[2026-07-24 12:45:06] APPROVAL_SUBMIT | 用户: dajinyu | OP-20260724-002: archive
+[2026-07-24 12:45:46] LOGIN | 用户: xjq | 登录成功
+[2026-07-24 12:46:15] APPROVAL_APPROVE | 用户: xjq | OP-20260724-002: 审批通过，操作已生效: 归档项目成功; ID=24; （报表和同步正在后台执行）
