@@ -9,24 +9,12 @@
     "戴于东": "yudong.dai@hxgroup.com",
     "姚金星": "jinxing.yao@hxgroup.com",
     "张国庆": "guoqing.zhang@hxgroup.com",
-    "魏殷浩": "yinhao.wei@hxgroup.com"
+    "魏殷浩": "yinhao.wei@hxgroup.com",
+    "文春英": "chunying.wen@hxgroup.com",
+    "肖庆阳": "qingyang.xiao@hxgroup.com",
+    "袁知正": "zhizheng.yuan@hxgroup.com"
   },
-  "newProjects": [
-    {
-      "id": 215,
-      "部门": "产品降本",
-      "项目": "研究院LoRaWAN",
-      "项目开始时间": "1900-01-01",
-      "项目结束时间": "2100-01-01",
-      "项目描述": "测试lorawan项目主板基础功能",
-      "资源类型": "固件工程师",
-      "资源名称": "答金雨",
-      "资源开始时间": "2026-07-27",
-      "资源结束时间": "2026-07-30",
-      "日平均工时": 8,
-      "已归档": false
-    }
-  ],
+  "newProjects": [],
   "deletedIds": [],
-  "lastUpdate": "2026-07-24T05:54:05.780119"
+  "lastUpdate": "2026-07-24T05:54:21.874226"
 }
