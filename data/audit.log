@@ -149,9 +149,21 @@
 [2026-07-21 14:25:46] LOGIN | 用户: xjq | 登录成功
 [2026-07-21 14:26:15] DATA_SYNC | 用户: admin | 数据同步更新
 [2026-07-21 14:30:01] USER_CREATE | 用户: admin | 创建用户: yjl, 角色: editor
-[2026-07-23 11:10:49] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
-[2026-07-23 11:11:16] LOGIN | 用户: xjq | 登录成功
-[2026-07-23 11:11:34] PROJECT_ARCHIVE | 用户: xjq | ID=49: 归档项目成功; ID=49; （报表和同步正在后台执行）
-[2026-07-23 11:11:38] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-23 11:12:05] PROJECT_UNARCHIVE | 用户: xjq | ID=49: 取消归档项目成功; ID=49; （报表和同步正在后台执行）
-[2026-07-23 11:12:11] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-24 00:55:18] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-07-24 01:04:06] LOGIN | 用户: xjq | 登录成功
+[2026-07-24 01:34:26] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲.pdf
+[2026-07-24 01:34:57] IMPORT_PARSE | 用户: xjq | type=pdf, filename=1.pdf
+[2026-07-24 01:37:27] IMPORT_PARSE | 用户: xjq | type=pdf, filename=1.pdf
+[2026-07-24 01:42:05] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
+[2026-07-24 01:44:45] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
+[2026-07-24 01:47:24] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
+[2026-07-24 01:47:51] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
+[2026-07-24 01:48:58] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
+[2026-07-24 01:49:48] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
+[2026-07-24 01:52:45] IMPORT_PARSE | 用户: xjq | type=pdf, filename=2.pdf
+[2026-07-24 01:55:52] IMPORT_PARSE | 用户: xjq | type=pdf, filename=2.pdf
+[2026-07-24 01:58:12] IMPORT_PARSE | 用户: xjq | type=pdf, filename=2.pdf
+[2026-07-24 02:30:05] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
+[2026-07-24 02:38:13] IMPORT_COMMIT | 用户: xjq | 批量导入 68 条
+[2026-07-24 02:38:20] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-24 02:39:43] PROJECT_BATCH_DELETE | 用户: xjq | 11/11个
