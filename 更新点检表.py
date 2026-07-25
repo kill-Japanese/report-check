@@ -6234,7 +6234,7 @@ async function renderRequirements() {
   const container = document.getElementById('tableContainer');
   container.innerHTML = '<div style="text-align:center;padding:40px;color:#999">加载中...</div>';
   try {
-    const resp = await fetch('/api/requirements');
+    const resp = await fetch('/api/requirements', {method: 'POST', credentials: 'include'});
     if (!resp.ok) throw new Error('获取需求列表失败: ' + resp.status);
     const data = await resp.json();
     const list = data.requirements || data || [];

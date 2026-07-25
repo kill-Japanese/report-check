@@ -1291,6 +1291,19 @@ window.CURRENT_USER = {user_info};
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
+        # --- 兼容GET：需求列表查询（前端统一用POST访问）---
+        if path == '/api/requirements':
+            if not self.require_auth():
+                return
+            query = urllib.parse.parse_qs(parsed.query)
+            status_filter = query.get('status', [''])[0]
+            req_data = load_requirements()
+            reqs = req_data.get('requirements', [])
+            if status_filter:
+                reqs = [r for r in reqs if r.get('status') == status_filter]
+            self.send_json({'success': True, 'requirements': reqs})
+            return
+
         # 对于文件上传，先解析 multipart（不调用 read_body，避免二进制数据解码崩溃）
         if path == '/api/upload':
             if not self.require_permission('save'):
