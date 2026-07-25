@@ -9,12 +9,24 @@
     "戴于东": "yudong.dai@hxgroup.com",
     "姚金星": "jinxing.yao@hxgroup.com",
     "张国庆": "guoqing.zhang@hxgroup.com",
-    "魏殷浩": "yinhao.wei@hxgroup.com",
-    "文春英": "chunying.wen@hxgroup.com",
-    "肖庆阳": "qingyang.xiao@hxgroup.com",
-    "袁知正": "zhizheng.yuan@hxgroup.com"
+    "魏殷浩": "yinhao.wei@hxgroup.com"
   },
-  "newProjects": [],
+  "newProjects": [
+    {
+      "id": 216,
+      "部门": "测试",
+      "项目": "TEST demand",
+      "项目开始时间": "1900-01-01",
+      "项目结束时间": "2100-01-01",
+      "项目描述": "新增",
+      "资源类型": "项目经理",
+      "资源名称": "项家祺",
+      "资源开始时间": "2026-07-25",
+      "资源结束时间": "2026-07-25",
+      "日平均工时": 8,
+      "已归档": false
+    }
+  ],
   "deletedIds": [],
-  "lastUpdate": "2026-07-24T08:11:04.408639"
+  "lastUpdate": "2026-07-25T07:15:59.176463"
 }
