@@ -6307,12 +6307,12 @@ function openSubmitRequirementModal() {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal" style="max-width:500px">
-      <div class="modal-header">
+    <div class="modal-box" style="max-width:500px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <h3 style="margin:0;font-size:16px">提交新需求</h3>
         <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
       </div>
-      <div class="modal-body" style="padding:20px">
+      <div>
         <div style="margin-bottom:14px">
           <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">需求名称 <span style="color:red">*</span></label>
           <input type="text" id="reqName" placeholder="请输入需求名称" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
@@ -6330,7 +6330,7 @@ function openSubmitRequirementModal() {
           <textarea id="reqDescription" rows="4" placeholder="请详细描述需求开发点" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
         </div>
       </div>
-      <div class="modal-footer" style="padding:15px 20px;border-top:1px solid #eee;text-align:right">
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
         <button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
         <button class="btn btn-primary" onclick="submitRequirement()" style="margin-left:8px">提交</button>
       </div>
@@ -6375,12 +6375,12 @@ function openAcceptRequirementModal(reqId) {
   overlay.className = 'modal-overlay';
   overlay.id = 'acceptReqModal';
   overlay.innerHTML = `
-    <div class="modal" style="max-width:560px">
-      <div class="modal-header">
+    <div class="modal-box" style="max-width:560px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <h3 style="margin:0;font-size:16px">受理需求</h3>
         <button class="modal-close" onclick="closeAcceptRequirementModal()">&times;</button>
       </div>
-      <div class="modal-body" style="padding:20px">
+      <div>
         <div style="margin-bottom:14px;padding:10px;background:#d9edf7;border-radius:4px;font-size:13px;color:#31708f">
           <strong>受理流程：</strong>受理需求时，需要为此需求关联至少一个项目。您可以通过以下两种方式添加项目，添加完成后点击「完成受理」。
         </div>
@@ -6395,7 +6395,7 @@ function openAcceptRequirementModal(reqId) {
           <button class="btn btn-primary" onclick="openImportModal()" style="flex:1;font-size:13px">从Project导入</button>
         </div>
       </div>
-      <div class="modal-footer" style="padding:15px 20px;border-top:1px solid #eee;text-align:right">
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
         <button class="btn" onclick="closeAcceptRequirementModal()">取消</button>
         <button class="btn btn-success" onclick="finishAcceptRequirement('${escapeHtml(reqId)}')" style="margin-left:8px">完成受理</button>
       </div>
@@ -6506,11 +6506,11 @@ function showRequirementRejectNotification(reqName, reason) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal" style="max-width:420px">
-      <div class="modal-header">
+    <div class="modal-box" style="max-width:420px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <h3 style="margin:0;font-size:16px;color:#d32f2f">需求被拒绝</h3>
       </div>
-      <div class="modal-body" style="padding:20px">
+      <div>
         <div style="margin-bottom:12px;padding:10px;background:#ffebee;border-radius:4px;font-size:13px;color:#c62828">
           <strong>需求名称：</strong>${escapeHtml(reqName)}<br>
           <strong>该需求已被拒绝并删除。</strong>
@@ -6523,7 +6523,7 @@ function showRequirementRejectNotification(reqName, reason) {
           如需继续，请重新提交该需求。
         </div>
       </div>
-      <div class="modal-footer" style="padding:15px 20px;border-top:1px solid #eee;text-align:right">
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
         <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove()">知道了</button>
       </div>
     </div>
