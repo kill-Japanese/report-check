@@ -6272,15 +6272,15 @@ async function renderRequirements() {
         html += '<td style="padding:8px 10px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(req.description || '') + '">' + escapeHtml(req.description || '') + '</td>';
         html += '<td style="padding:8px 10px;text-align:center"><span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;color:' + st.color + ';background:' + st.bg + ';border:1px solid ' + st.color + '">' + st.label + '</span></td>';
         html += '<td style="padding:8px 10px;white-space:nowrap">' + escapeHtml(req.submitter || '') + '</td>';
-        html += '<td style="padding:8px 10px;font-size:12px;color:#555">' + escapeHtml((req.projects || []).join(', ')) + '</td>';
+        html += '<td style="padding:8px 10px;font-size:12px;color:#555">' + escapeHtml((req.linked_projects || []).join(', ')) + '</td>';
         html += '<td style="padding:8px 10px;text-align:center;white-space:nowrap">';
         // 受理/拒绝按钮：canEditDirectly 权限
         if (req.status === 'submitted' && canEditDirectly()) {
           html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openAcceptRequirementModal(\'' + escapeHtml(req.id) + '\')">受理</button>';
           html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\'' + escapeHtml(req.id) + '\')">拒绝</button>';
         }
-        // 归档按钮：提交者本人可归档已受理的需求
-        if (isAccepted && isSubmitter) {
+        // 归档按钮：提交者本人或编辑者可归档已受理的需求
+        if (isAccepted && (isSubmitter || canEditDirectly())) {
           html += '<button class="btn btn-xs" style="margin-right:4px;background:#999;color:#fff" onclick="archiveRequirement(\'' + escapeHtml(req.id) + '\')">归档</button>';
         }
         // 删除按钮：canDelete 权限
@@ -6437,7 +6437,7 @@ async function finishAcceptRequirement(reqId) {
     const linkResp = await fetch('/api/requirement/link-projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reqId, projects: ctx.projectNames })
+      body: JSON.stringify({ id: reqId, project_names: ctx.projectNames })
     });
     if (!linkResp.ok) throw new Error('关联项目失败: ' + linkResp.status);
     const linkResult = await linkResp.json();
@@ -6447,7 +6447,7 @@ async function finishAcceptRequirement(reqId) {
     const acceptResp = await fetch('/api/requirement/accept', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reqId })
+      body: JSON.stringify({ id: reqId })
     });
     if (!acceptResp.ok) throw new Error('受理失败: ' + acceptResp.status);
     const acceptResult = await acceptResp.json();
@@ -6474,7 +6474,7 @@ async function rejectRequirement(reqId) {
     const resp = await fetch('/api/requirement/reject', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reqId, reason: reason.trim() })
+      body: JSON.stringify({ id: reqId, reason: reason.trim() })
     });
     if (!resp.ok) throw new Error('拒绝失败: ' + resp.status);
     const result = await resp.json();
@@ -6497,7 +6497,7 @@ async function archiveRequirement(reqId) {
     const resp = await fetch('/api/requirement/archive', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reqId })
+      body: JSON.stringify({ id: reqId })
     });
     if (!resp.ok) throw new Error('归档失败: ' + resp.status);
     const result = await resp.json();
@@ -6520,7 +6520,7 @@ async function deleteRequirement(reqId) {
     const resp = await fetch('/api/requirement/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reqId })
+      body: JSON.stringify({ id: reqId })
     });
     if (!resp.ok) throw new Error('删除失败: ' + resp.status);
     const result = await resp.json();
