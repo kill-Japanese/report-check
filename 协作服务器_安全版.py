@@ -2052,22 +2052,44 @@ window.CURRENT_USER = {user_info};
                 self.send_json({'success': False, 'message': '需求不存在'})
                 return
             old_status = req['status']
-            req['status'] = 'submitted'
-            req['rejector'] = user['username']
-            req['reject_time'] = datetime.now().isoformat()
-            req['reject_reason'] = reason
-            # 清除受理信息
-            req['acceptor'] = ''
-            req['accept_time'] = ''
-            req['auto_archive_deadline'] = ''
-            save_requirements(req_data)
-            _log_requirement_operation('requirement_reject', user['username'], req['name'],
-                                       {'status': old_status}, {'status': 'submitted', '拒绝原因': reason})
-            try:
-                threading.Thread(target=auth.sync_to_github, args=('拒绝需求:' + req['name'],), daemon=True).start()
-            except Exception:
-                pass
-            self.send_json({'success': True, 'message': '已拒绝，需求回退到待受理状态'})
+            req_name = req['name']
+            # STEP3.5: 受理阶段拒绝 → 删除需求，显示拒绝通知
+            if old_status in ('submitted', 'accepted'):
+                req['status'] = 'deleted'
+                req['rejector'] = user['username']
+                req['reject_time'] = datetime.now().isoformat()
+                req['reject_reason'] = reason
+                req['linked_projects'] = []
+                save_requirements(req_data)
+                _log_requirement_operation('requirement_reject', user['username'], req_name,
+                                           {'status': old_status}, {'status': 'deleted', '拒绝原因': reason})
+                try:
+                    threading.Thread(target=auth.sync_to_github, args=('拒绝需求(删除):' + req_name,), daemon=True).start()
+                except Exception:
+                    pass
+                self.send_json({'success': True, 'message': '需求已拒绝并删除', 'reject_reason': reason, 'req_name': req_name})
+                return
+            # STEP6.5: 归档态拒绝 → 回退到 submitted
+            if old_status == 'archived':
+                req['status'] = 'submitted'
+                req['rejector'] = user['username']
+                req['reject_time'] = datetime.now().isoformat()
+                req['reject_reason'] = reason
+                req['acceptor'] = ''
+                req['accept_time'] = ''
+                req['auto_archive_deadline'] = ''
+                req['archive_time'] = ''
+                req['archive_type'] = ''
+                save_requirements(req_data)
+                _log_requirement_operation('requirement_reject', user['username'], req_name,
+                                           {'status': 'archived'}, {'status': 'submitted', '拒绝原因': reason})
+                try:
+                    threading.Thread(target=auth.sync_to_github, args=('归档态拒绝(回退):' + req_name,), daemon=True).start()
+                except Exception:
+                    pass
+                self.send_json({'success': True, 'message': '需求已拒绝，回退到待受理状态'})
+                return
+            self.send_json({'success': False, 'message': f'当前状态({old_status})不支持拒绝操作'})
             return
 
         # --- 归档需求（本人 或 edit 权限）---

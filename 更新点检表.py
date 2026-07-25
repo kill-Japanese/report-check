@@ -6283,6 +6283,10 @@ async function renderRequirements() {
         if (isAccepted && (isSubmitter || canEditDirectly())) {
           html += '<button class="btn btn-xs" style="margin-right:4px;background:#999;color:#fff" onclick="archiveRequirement(\\'' + escapeHtml(req.id) + '\\')">归档</button>';
         }
+        // 归档态拒绝按钮：editor/admin 可拒绝已归档需求，回退到 submitted
+        if (isArchived && canEditDirectly()) {
+          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\\'' + escapeHtml(req.id) + '\\')">拒绝</button>';
+        }
         // 删除按钮：canDelete 权限
         if (canDelete()) {
           html += '<button class="btn btn-danger btn-xs" style="margin-right:4px" onclick="deleteRequirement(\\'' + escapeHtml(req.id) + '\\')">删除</button>';
@@ -6462,7 +6466,7 @@ async function finishAcceptRequirement(reqId) {
   }
 }
 
-// 拒绝需求
+// 拒绝需求（受理阶段拒绝=删除需求, 归档态拒绝=回退到submitted）
 async function rejectRequirement(reqId) {
   const reason = prompt('请输入拒绝原因（至少2个字）：');
   if (!reason) return;
@@ -6479,7 +6483,14 @@ async function rejectRequirement(reqId) {
     if (!resp.ok) throw new Error('拒绝失败: ' + resp.status);
     const result = await resp.json();
     if (result.success) {
-      alert('需求已拒绝');
+      // 后端根据原状态自动判断: accepted/submitted→deleted(删除通知), archived→submitted(回退)
+      if (result.reject_reason && result.req_name) {
+        // STEP3.5: 受理阶段拒绝，需求被删除，显示拒绝通知
+        showRequirementRejectNotification(result.req_name, result.reject_reason);
+      } else {
+        // STEP6.5: 归档态拒绝，回退到待受理
+        alert('需求已拒绝，回退到待受理状态');
+      }
       renderRequirements();
     } else {
       alert('拒绝失败: ' + (result.message || '未知错误'));
@@ -6488,6 +6499,36 @@ async function rejectRequirement(reqId) {
     console.error('[rejectRequirement] 错误:', e);
     alert('拒绝出错: ' + (e.message || e));
   }
+}
+
+// 需求被拒绝通知弹窗（受理阶段拒绝后显示给提交者）
+function showRequirementRejectNotification(reqName, reason) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <h3 style="margin:0;font-size:16px;color:#d32f2f">需求被拒绝</h3>
+      </div>
+      <div class="modal-body" style="padding:20px">
+        <div style="margin-bottom:12px;padding:10px;background:#ffebee;border-radius:4px;font-size:13px;color:#c62828">
+          <strong>需求名称：</strong>${escapeHtml(reqName)}<br>
+          <strong>该需求已被拒绝并删除。</strong>
+        </div>
+        <div style="font-size:13px;color:#555">
+          <strong>拒绝原因：</strong><br>
+          ${escapeHtml(reason)}
+        </div>
+        <div style="margin-top:12px;padding:8px;background:#fff3e0;border-radius:4px;font-size:12px;color:#e65100">
+          如需继续，请重新提交该需求。
+        </div>
+      </div>
+      <div class="modal-footer" style="padding:15px 20px;border-top:1px solid #eee;text-align:right">
+        <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove()">知道了</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
 }
 
 // 归档需求
