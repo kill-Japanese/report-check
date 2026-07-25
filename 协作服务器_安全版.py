@@ -37,6 +37,7 @@ DATA_DIR = os.path.join(BASE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 DATA_FILE = os.path.join(DATA_DIR, '协作数据.json')
 HTML_FILE = os.path.join(BASE_DIR, '项目延期点检表.html')
+REQ_FILE = os.path.join(DATA_DIR, '需求导入.json')
 
 # 安全头
 SECURITY_HEADERS = {
@@ -89,6 +90,42 @@ def save_data(data):
     data['lastUpdate'] = _compute_last_update()
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+# ==================== 需求数据管理 ====================
+def load_requirements():
+    if not os.path.exists(REQ_FILE):
+        return {'requirements': [], 'meta': {'last_id_date': '', 'last_id_seq': 0}}
+    try:
+        with open(REQ_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {'requirements': [], 'meta': {'last_id_date': '', 'last_id_seq': 0}}
+
+def save_requirements(data):
+    with open(REQ_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def _generate_req_id(meta):
+    today = datetime.now().strftime('%Y%m%d')
+    if meta.get('last_id_date') != today:
+        meta['last_id_date'] = today
+        meta['last_id_seq'] = 0
+    meta['last_id_seq'] += 1
+    return f"REQ-{today}-{meta['last_id_seq']:03d}"
+
+def _log_requirement_operation(op_type, operator, req_name, before_data, after_data):
+    """写需求操作到 Excel 操作记录 Sheet"""
+    op_data = {
+        '操作时间': datetime.now().isoformat(),
+        '操作人': operator,
+        '操作类型': op_type,
+        '项目ID列表': [],
+        '项目名列表': [req_name],
+        '变更前内容': before_data,
+        '变更后内容': after_data,
+        '状态': 'direct',
+    }
+    sync_excel._append_operation(op_data)
 
 def get_local_ip():
     try:
@@ -1696,6 +1733,19 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': True, 'data': result})
             return
 
+        # --- API: 需求导入列表（需已登录）---
+        if path == '/api/requirements':
+            if not self.require_auth():
+                return
+            query = urllib.parse.parse_qs(parsed.query)
+            status_filter = query.get('status', [''])[0]
+            req_data = load_requirements()
+            reqs = req_data.get('requirements', [])
+            if status_filter:
+                reqs = [r for r in reqs if r.get('status') == status_filter]
+            self.send_json({'success': True, 'requirements': reqs})
+            return
+
         # --- 解析导入（需 edit 权限）---
         if path == '/api/import/parse':
             if not self.require_permission('edit'):
@@ -1901,6 +1951,217 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': ok, 'message': msg})
             return
 
+        # ========== 需求导入 API ==========
+        # --- 提交新需求（已登录即可）---
+        if path == '/api/requirement/submit':
+            if not self.require_auth():
+                return
+            user = self.get_current_user()
+            name = (data.get('name') or '').strip()
+            source = (data.get('source') or '').strip()
+            description = (data.get('description') or '').strip()
+            if not name:
+                self.send_json({'success': False, 'message': '需求名称不能为空'})
+                return
+            if not source:
+                self.send_json({'success': False, 'message': '请选择需求来源'})
+                return
+            if not description:
+                self.send_json({'success': False, 'message': '请填写需求开发点描述'})
+                return
+            req_data = load_requirements()
+            req_id = _generate_req_id(req_data['meta'])
+            req = {
+                'id': req_id,
+                'name': name,
+                'source': source,
+                'description': description,
+                'status': 'submitted',
+                'submitter': user['username'],
+                'submit_time': datetime.now().isoformat(),
+                'acceptor': '',
+                'accept_time': '',
+                'linked_projects': [],
+                'rejector': '',
+                'reject_time': '',
+                'reject_reason': '',
+                'archive_time': '',
+                'archive_type': '',
+                'auto_archive_deadline': '',
+            }
+            req_data['requirements'].append(req)
+            save_requirements(req_data)
+            _log_requirement_operation('requirement_submit', user['username'], name, {}, {'status': 'submitted'})
+            # GitHub 同步
+            try:
+                threading.Thread(target=auth.sync_to_github, args=('提交需求:' + name,), daemon=True).start()
+            except Exception:
+                pass
+            self.send_json({'success': True, 'message': '需求提交成功', 'requirement': req})
+            return
+
+        # --- 受理需求（edit 权限）---
+        if path == '/api/requirement/accept':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            req_id = (data.get('id') or '').strip()
+            if not req_id:
+                self.send_json({'success': False, 'message': '缺少需求ID'})
+                return
+            req_data = load_requirements()
+            req = next((r for r in req_data['requirements'] if r['id'] == req_id), None)
+            if not req:
+                self.send_json({'success': False, 'message': '需求不存在'})
+                return
+            if req['status'] != 'submitted':
+                self.send_json({'success': False, 'message': f'需求不是待受理状态（当前: {req["status"]}）'})
+                return
+            from datetime import timedelta
+            now = datetime.now()
+            req['status'] = 'accepted'
+            req['acceptor'] = user['username']
+            req['accept_time'] = now.isoformat()
+            req['auto_archive_deadline'] = (now + timedelta(days=3)).isoformat()
+            save_requirements(req_data)
+            _log_requirement_operation('requirement_accept', user['username'], req['name'],
+                                       {'status': 'submitted'}, {'status': 'accepted'})
+            try:
+                threading.Thread(target=auth.sync_to_github, args=('受理需求:' + req['name'],), daemon=True).start()
+            except Exception:
+                pass
+            self.send_json({'success': True, 'message': '已受理，请在3天内确认归档'})
+            return
+
+        # --- 拒绝需求（edit 权限，需填写原因>1字）---
+        if path == '/api/requirement/reject':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            req_id = (data.get('id') or '').strip()
+            reason = (data.get('reason') or '').strip()
+            if not req_id:
+                self.send_json({'success': False, 'message': '缺少需求ID'})
+                return
+            if len(reason) < 2:
+                self.send_json({'success': False, 'message': '拒绝原因至少需要2个字'})
+                return
+            req_data = load_requirements()
+            req = next((r for r in req_data['requirements'] if r['id'] == req_id), None)
+            if not req:
+                self.send_json({'success': False, 'message': '需求不存在'})
+                return
+            old_status = req['status']
+            req['status'] = 'submitted'
+            req['rejector'] = user['username']
+            req['reject_time'] = datetime.now().isoformat()
+            req['reject_reason'] = reason
+            # 清除受理信息
+            req['acceptor'] = ''
+            req['accept_time'] = ''
+            req['auto_archive_deadline'] = ''
+            save_requirements(req_data)
+            _log_requirement_operation('requirement_reject', user['username'], req['name'],
+                                       {'status': old_status}, {'status': 'submitted', '拒绝原因': reason})
+            try:
+                threading.Thread(target=auth.sync_to_github, args=('拒绝需求:' + req['name'],), daemon=True).start()
+            except Exception:
+                pass
+            self.send_json({'success': True, 'message': '已拒绝，需求回退到待受理状态'})
+            return
+
+        # --- 归档需求（本人 或 edit 权限）---
+        if path == '/api/requirement/archive':
+            if not self.require_auth():
+                return
+            user = self.get_current_user()
+            req_id = (data.get('id') or '').strip()
+            if not req_id:
+                self.send_json({'success': False, 'message': '缺少需求ID'})
+                return
+            req_data = load_requirements()
+            req = next((r for r in req_data['requirements'] if r['id'] == req_id), None)
+            if not req:
+                self.send_json({'success': False, 'message': '需求不存在'})
+                return
+            if req['status'] != 'accepted':
+                self.send_json({'success': False, 'message': '需求不是已受理状态，无法归档'})
+                return
+            # 权限检查：本人 或 editor/admin
+            if req['submitter'] != user['username'] and 'edit' not in user.get('permissions', []):
+                self.send_json({'success': False, 'message': '权限不足，仅需求提交者或编辑者可归档'})
+                return
+            req['status'] = 'archived'
+            req['archive_time'] = datetime.now().isoformat()
+            req['archive_type'] = 'manual'
+            save_requirements(req_data)
+            _log_requirement_operation('requirement_archive', user['username'], req['name'],
+                                       {'status': 'accepted'}, {'status': 'archived'})
+            try:
+                threading.Thread(target=auth.sync_to_github, args=('归档需求:' + req['name'],), daemon=True).start()
+            except Exception:
+                pass
+            self.send_json({'success': True, 'message': '需求已归档'})
+            return
+
+        # --- 删除需求（仅 admin）---
+        if path == '/api/requirement/delete':
+            if not self.require_permission('delete'):
+                return
+            user = self.get_current_user()
+            req_id = (data.get('id') or '').strip()
+            if not req_id:
+                self.send_json({'success': False, 'message': '缺少需求ID'})
+                return
+            req_data = load_requirements()
+            req = next((r for r in req_data['requirements'] if r['id'] == req_id), None)
+            if not req:
+                self.send_json({'success': False, 'message': '需求不存在'})
+                return
+            old_status = req['status']
+            req['status'] = 'deleted'
+            req['name'] = '[已删除]'
+            req['description'] = ''
+            req['source'] = ''
+            save_requirements(req_data)
+            _log_requirement_operation('requirement_delete', user['username'], '[已删除]',
+                                       {'status': old_status}, {'status': 'deleted'})
+            try:
+                threading.Thread(target=auth.sync_to_github, args=('删除需求:' + req_id,), daemon=True).start()
+            except Exception:
+                pass
+            self.send_json({'success': True, 'message': '需求已删除'})
+            return
+
+        # --- 关联项目到需求（edit 权限）---
+        if path == '/api/requirement/link-projects':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            req_id = (data.get('id') or '').strip()
+            project_names = data.get('project_names', [])
+            if not req_id:
+                self.send_json({'success': False, 'message': '缺少需求ID'})
+                return
+            if not project_names or not isinstance(project_names, list):
+                self.send_json({'success': False, 'message': '缺少项目名称列表'})
+                return
+            req_data = load_requirements()
+            req = next((r for r in req_data['requirements'] if r['id'] == req_id), None)
+            if not req:
+                self.send_json({'success': False, 'message': '需求不存在'})
+                return
+            # 去重合并
+            existing = set(req.get('linked_projects', []))
+            new_names = [n for n in project_names if n and n not in existing]
+            req['linked_projects'] = list(existing | set(new_names))
+            save_requirements(req_data)
+            _log_requirement_operation('requirement_link_projects', user['username'], req['name'],
+                                       {'linked_projects': list(existing)},
+                                       {'linked_projects': req['linked_projects']})
+            self.send_json({'success': True, 'message': f'已关联 {len(new_names)} 个项目'})
+            return
+
         self.send_json({'error': 'Unknown endpoint'}, 404)
 
     # ---------- PUT 请求 ----------
@@ -2091,6 +2352,38 @@ def main():
 
     # 启动自动同步用户数据到 GitHub（每30分钟一次，用户数据变化不频繁）
     auth.auto_sync_periodically(30 * 60)
+
+    # 需求自动归档定时任务（每小时检查一次）
+    def _auto_archive_requirements():
+        while True:
+            time.sleep(3600)
+            try:
+                req_data = load_requirements()
+                now = datetime.now().isoformat()
+                changed = False
+                for req in req_data.get('requirements', []):
+                    if req.get('status') == 'accepted' and req.get('auto_archive_deadline'):
+                        if req['auto_archive_deadline'] <= now:
+                            req['status'] = 'archived'
+                            req['archive_time'] = now
+                            req['archive_type'] = 'auto'
+                            changed = True
+                            _log_requirement_operation(
+                                'requirement_auto_archive', 'system', req['name'],
+                                {'status': 'accepted'},
+                                {'status': 'archived', '原因': '3天未确认'}
+                            )
+                if changed:
+                    save_requirements(req_data)
+                    try:
+                        auth.sync_to_github('需求自动归档')
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f'[自动归档] 检查失败: {e}')
+
+    threading.Thread(target=_auto_archive_requirements, daemon=True).start()
+    print("📋 已启用需求自动归档（每小时检查，3天超时自动归档）")
     
     # 【关键】关闭自动从 GitHub 拉取！
     # 服务器是唯一数据源，用户只通过网页操作修改数据
