@@ -6276,16 +6276,16 @@ async function renderRequirements() {
         html += '<td style="padding:8px 10px;text-align:center;white-space:nowrap">';
         // 受理/拒绝按钮：canEditDirectly 权限
         if (req.status === 'submitted' && canEditDirectly()) {
-          html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openAcceptRequirementModal(\'' + escapeHtml(req.id) + '\')">受理</button>';
-          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\'' + escapeHtml(req.id) + '\')">拒绝</button>';
+          html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openAcceptRequirementModal(\\'' + escapeHtml(req.id) + '\\')">受理</button>';
+          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\\'' + escapeHtml(req.id) + '\\')">拒绝</button>';
         }
         // 归档按钮：提交者本人或编辑者可归档已受理的需求
         if (isAccepted && (isSubmitter || canEditDirectly())) {
-          html += '<button class="btn btn-xs" style="margin-right:4px;background:#999;color:#fff" onclick="archiveRequirement(\'' + escapeHtml(req.id) + '\')">归档</button>';
+          html += '<button class="btn btn-xs" style="margin-right:4px;background:#999;color:#fff" onclick="archiveRequirement(\\'' + escapeHtml(req.id) + '\\')">归档</button>';
         }
         // 删除按钮：canDelete 权限
         if (canDelete()) {
-          html += '<button class="btn btn-danger btn-xs" style="margin-right:4px" onclick="deleteRequirement(\'' + escapeHtml(req.id) + '\')">删除</button>';
+          html += '<button class="btn btn-danger btn-xs" style="margin-right:4px" onclick="deleteRequirement(\\'' + escapeHtml(req.id) + '\\')">删除</button>';
         }
         html += '</td></tr>';
       });
