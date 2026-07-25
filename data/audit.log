@@ -149,70 +149,7 @@
 [2026-07-21 14:25:46] LOGIN | 用户: xjq | 登录成功
 [2026-07-21 14:26:15] DATA_SYNC | 用户: admin | 数据同步更新
 [2026-07-21 14:30:01] USER_CREATE | 用户: admin | 创建用户: yjl, 角色: editor
-[2026-07-24 00:55:18] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
-[2026-07-24 01:04:06] LOGIN | 用户: xjq | 登录成功
-[2026-07-24 01:34:26] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲.pdf
-[2026-07-24 01:34:57] IMPORT_PARSE | 用户: xjq | type=pdf, filename=1.pdf
-[2026-07-24 01:37:27] IMPORT_PARSE | 用户: xjq | type=pdf, filename=1.pdf
-[2026-07-24 01:42:05] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
-[2026-07-24 01:44:45] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
-[2026-07-24 01:47:24] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
-[2026-07-24 01:47:51] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
-[2026-07-24 01:48:58] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
-[2026-07-24 01:49:48] IMPORT_PARSE | 用户: xjq | type=pdf, filename=欧洲2.pdf
-[2026-07-24 01:52:45] IMPORT_PARSE | 用户: xjq | type=pdf, filename=2.pdf
-[2026-07-24 01:55:52] IMPORT_PARSE | 用户: xjq | type=pdf, filename=2.pdf
-[2026-07-24 01:58:12] IMPORT_PARSE | 用户: xjq | type=pdf, filename=2.pdf
-[2026-07-24 02:30:05] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
-[2026-07-24 02:38:13] IMPORT_COMMIT | 用户: xjq | 批量导入 68 条
-[2026-07-24 02:38:20] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 02:39:43] PROJECT_BATCH_DELETE | 用户: xjq | 11/11个
-[2026-07-24 02:39:49] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 02:40:14] PROJECT_EDIT | 用户: xjq | ID=185: 编辑项目成功; ID=185; （报表和同步正在后台执行）
-[2026-07-24 02:40:18] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 02:40:29] PROJECT_ARCHIVE | 用户: xjq | ID=165: 归档项目成功; ID=165; （报表和同步正在后台执行）
-[2026-07-24 02:40:33] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 02:47:09] LOGIN | 用户: lhl | 登录成功
-[2026-07-24 05:21:32] LOGIN | 用户: zky | 登录成功
-[2026-07-24 05:22:55] APPROVAL_SUBMIT | 用户: zky | : edit
-[2026-07-24 05:23:03] APPROVAL_SUBMIT | 用户: zky | OP-20260724-001: edit
-[2026-07-24 05:51:30] LOGIN | 用户: tjs | 登录成功
-[2026-07-24 05:54:05] PROJECT_ADD | 用户: tjs | 新增成功(ID=215); （报表和同步正在后台执行）
-[2026-07-24 05:54:10] DATA_SYNC | 用户: tjs | 数据同步更新
-[2026-07-24 05:55:59] LOGIN | 用户: xjq | 登录成功
-[2026-07-24 05:56:40] APPROVAL_APPROVE | 用户: xjq | OP-20260724-001: 审批失败: File is not a zip file
-[2026-07-24 05:56:40] APPROVAL_APPROVE | 用户: xjq | OP-20260724-001: 审批通过，操作已生效: 编辑项目成功; ID=13; （报表和同步正在后台执行）
-[2026-07-24 06:17:01] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-24 07:38:25] PROJECT_UNARCHIVE | 用户: xjq | ID=162: 取消归档项目成功; ID=162; （报表和同步正在后台执行）
-[2026-07-24 07:38:29] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 07:39:28] PROJECT_ARCHIVE | 用户: xjq | ID=147: 归档项目成功; ID=147; （报表和同步正在后台执行）
-[2026-07-24 07:39:36] PROJECT_ARCHIVE | 用户: xjq | ID=148: 归档项目成功; ID=148; （报表和同步正在后台执行）
-[2026-07-24 07:39:45] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 07:39:56] PROJECT_ARCHIVE | 用户: xjq | ID=50: 归档项目成功; ID=50; （报表和同步正在后台执行）
-[2026-07-24 07:40:03] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 07:40:44] USER_CREATE | 用户: admin | 创建用户: dajinyu, 角色: viewer
-[2026-07-24 07:43:26] PROJECT_EDIT | 用户: xjq | ID=63: 编辑项目成功; ID=63; （报表和同步正在后台执行）
-[2026-07-24 07:43:30] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 07:43:59] PROJECT_EDIT | 用户: xjq | ID=64: 编辑项目成功; ID=64; （报表和同步正在后台执行）
-[2026-07-24 07:44:03] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 07:44:43] PROJECT_EDIT | 用户: xjq | ID=65: 项目ID=65 不存在
-[2026-07-24 07:44:43] PROJECT_EDIT | 用户: xjq | ID=65: 编辑项目成功; ID=65; （报表和同步正在后台执行）
-[2026-07-24 07:44:46] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 07:45:04] PROJECT_EDIT | 用户: xjq | ID=66: 编辑项目成功; ID=66; （报表和同步正在后台执行）
-[2026-07-24 07:45:09] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 07:45:29] PROJECT_ARCHIVE | 用户: xjq | ID=25: 归档项目成功; ID=25; （报表和同步正在后台执行）
-[2026-07-24 07:45:34] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 07:46:01] PROJECT_EDIT | 用户: xjq | ID=24: 编辑项目成功; ID=24; （报表和同步正在后台执行）
-[2026-07-24 07:46:05] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-24 08:08:35] LOGIN | 用户: ycx | 登录成功
-[2026-07-24 08:10:52] DATA_SYNC | 用户: ycx | 数据同步更新
-[2026-07-24 08:11:34] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
-[2026-07-24 08:11:50] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
-[2026-07-24 08:11:58] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
-[2026-07-24 09:48:57] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-24 10:01:38] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-24 10:36:37] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-24 12:42:40] LOGIN | 用户: dajinyu | 登录成功
-[2026-07-24 12:45:06] APPROVAL_SUBMIT | 用户: dajinyu | OP-20260724-002: archive
-[2026-07-24 12:45:46] LOGIN | 用户: xjq | 登录成功
-[2026-07-24 12:46:15] APPROVAL_APPROVE | 用户: xjq | OP-20260724-002: 审批通过，操作已生效: 归档项目成功; ID=24; （报表和同步正在后台执行）
+[2026-07-25 07:10:16] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-07-25 07:14:27] LOGIN | 用户: xjq | 登录成功
+[2026-07-25 07:15:15] IMPORT_PARSE | 用户: xjq | type=pdf, filename=巴勒斯坦.pdf
+[2026-07-25 07:15:59] PROJECT_ADD | 用户: xjq | 新增成功(ID=216); （报表和同步正在后台执行）
