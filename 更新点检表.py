@@ -6422,7 +6422,8 @@ function openLinkExistingProjectModal() {
   const ctx = window._requirementAcceptCtx;
   if (!ctx) return;
   // 从 RAW_DATA.allProjects 中提取已有项目名
-  const allProjects = (window.RAW_DATA && RAW_DATA.allProjects) ? RAW_DATA.allProjects : [];
+  // 注意: RAW_DATA 是 const 声明的全局变量, 不在 window 上, 直接引用即可
+  const allProjects = (typeof RAW_DATA !== 'undefined' && RAW_DATA.allProjects) ? RAW_DATA.allProjects : [];
   const projectNames = allProjects.map(p => p.项目 || p['项目名称'] || p['项目名'] || p.name || p.project || '').filter(n => n);
   // 去重
   const uniqueProjects = [...new Set(projectNames)];
