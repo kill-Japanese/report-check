@@ -134,9 +134,9 @@ flowchart TD
   │ 已关联项目：（添加后在此显示标签）    │
   │   [巴西NB-V3] [印度项目]            │
   │                                     │
-  │  ┌──────────┐   ┌──────────────┐    │
-  │  │ 添加项目  │   │ 从Project导入 │    │ ← 复用现有弹窗
-  │  └──────────┘   └──────────────┘    │
+  │  ┌──────────┐ ┌────────────┐ ┌──────────────┐ │
+  │  │ 添加项目  │ │关联已有项目│ │ 从Project导入 │ │ ← 复用现有弹窗
+  │  └──────────┘ └────────────┘ └──────────────┘ │
   │                                     │
   │  [取消]              [完成受理]       │
   └─────────────────────────────────────┘
@@ -144,6 +144,12 @@ flowchart TD
   - 复用现有 openAddProjectModal() 弹窗
   - 项目添加成功后不关闭弹窗，清空表单
   - 项目名自动收集到受理弹窗的「已关联项目」列表
+弹窗内点击「关联已有项目」：
+  - 弹出项目选择器，列出当前系统中的所有项目名称
+  - 支持搜索过滤（输入关键字实时筛选）
+  - 复选框勾选/取消勾选项目
+  - 已关联的项目显示为禁用状态并标记「(已关联)」
+  - 勾选后项目名自动添加到受理弹窗的「已关联项目」列表
 弹窗内点击「从Project导入」：
   - 复用现有 openImportModal() 弹窗
   - 支持文本粘贴、.mpp文件、PDF文件、截图
@@ -180,12 +186,12 @@ flowchart TD
   - 关联项目列：显示已关联的项目名（逗号分隔）
   - 受理人、受理时间
 可见操作：
-  - 需求导入者（提交者本人）：「归档」按钮
-  - editor/admin：「归档」按钮 + 「拒绝」按钮
-  - 普通用户：仅查看
-拒绝说明：
-  - 点击「拒绝」后需填写拒绝原因（>1个字符）
-  - 拒绝后状态回退到 submitted（需求导入态）
+  - editor/admin：「归档」按钮 + 「回退」按钮
+  - 普通用户（含提交者本人）：仅查看
+回退说明：
+  - 点击「回退」后弹出确认框
+  - 回退后状态变为 submitted（需求导入态），清除受理人/受理时间/归档期限
+  - 保留已关联的项目名（不清除）
   - 回到 STEP 3，编辑者可重新受理
 后台计时：
   - 从受理时间开始，3天内未归档则自动执行 STEP 7
@@ -291,7 +297,8 @@ flowchart TD
 | POST | `/api/requirement/submit` | 已登录（任意角色） | 提交新需求 |
 | POST | `/api/requirement/accept` | `edit` | 受理需求，状态变为 accepted，设置 3 天归档期限 |
 | POST | `/api/requirement/reject` | `edit` | 拒绝需求，状态回退为 submitted |
-| POST | `/api/requirement/archive` | 本人 或 `edit` | 提交者确认归档 |
+| POST | `/api/requirement/archive` | `edit` | 确认归档（仅 editor/admin） |
+| POST | `/api/requirement/revert` | `edit` | 回退已受理需求到 submitted（仅 editor/admin） |
 | POST | `/api/requirement/delete` | `delete` | 抹除需求信息（仅 admin） |
 | POST | `/api/requirement/link-projects` | `edit` | 受理完成后关联项目名称 |
 
@@ -957,7 +964,8 @@ async function deleteRequirement(reqId) {
 | 提交需求 | 已登录 | `require_auth()`（viewer/editor/admin 均可） |
 | 受理需求 | `edit` | `require_permission('edit')`（editor/admin） |
 | 拒绝需求 | `edit` | `require_permission('edit')`（editor/admin） |
-| 归档需求 | 本人 或 `edit` | 代码内判断 `req.submitter == username` 或 `has_permission('edit')` |
+| 归档需求 | `edit` | `require_permission('edit')`（editor/admin） |
+| 回退需求 | `edit` | `require_permission('edit')`（editor/admin） |
 | 删除需求 | `delete` | `require_permission('delete')`（仅 admin） |
 | 关联项目 | `edit` | `require_permission('edit')`（editor/admin） |
 

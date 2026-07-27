@@ -6279,9 +6279,13 @@ async function renderRequirements() {
           html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openAcceptRequirementModal(\\'' + escapeHtml(req.id) + '\\')">受理</button>';
           html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\\'' + escapeHtml(req.id) + '\\')">拒绝</button>';
         }
-        // 归档按钮：提交者本人或编辑者可归档已受理的需求
-        if (isAccepted && (isSubmitter || canEditDirectly())) {
+        // 归档按钮：仅 editor/admin 可归档已受理的需求
+        if (isAccepted && canEditDirectly()) {
           html += '<button class="btn btn-xs" style="margin-right:4px;background:#999;color:#fff" onclick="archiveRequirement(\\'' + escapeHtml(req.id) + '\\')">归档</button>';
+        }
+        // 回退按钮：仅 editor/admin 可回退已受理的需求到 submitted
+        if (isAccepted && canEditDirectly()) {
+          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="revertRequirement(\\'' + escapeHtml(req.id) + '\\')">回退</button>';
         }
         // 归档态拒绝按钮：editor/admin 可拒绝已归档需求，回退到 submitted
         if (isArchived && canEditDirectly()) {
@@ -6392,6 +6396,7 @@ function openAcceptRequirementModal(reqId) {
         </div>
         <div style="display:flex;gap:10px;margin-bottom:14px">
           <button class="btn btn-primary" onclick="openAddProjectModal()" style="flex:1;font-size:13px">添加项目</button>
+          <button class="btn btn-primary" onclick="openLinkExistingProjectModal()" style="flex:1;font-size:13px">关联已有项目</button>
           <button class="btn btn-primary" onclick="openImportModal()" style="flex:1;font-size:13px">从Project导入</button>
         </div>
       </div>
@@ -6410,6 +6415,73 @@ function closeAcceptRequirementModal() {
   window._requirementAcceptCtx = null;
   const modal = document.getElementById('acceptReqModal');
   if (modal) modal.remove();
+}
+
+// 关联已有项目弹窗（从当前项目列表中选取）
+function openLinkExistingProjectModal() {
+  const ctx = window._requirementAcceptCtx;
+  if (!ctx) return;
+  // 从 RAW_DATA 中提取已有项目名
+  const allProjects = (window.RAW_DATA || []).map(p => p['项目'] || p['项目名称'] || '').filter(n => n);
+  // 去重
+  const uniqueProjects = [...new Set(allProjects)];
+  if (uniqueProjects.length === 0) {
+    alert('当前没有可关联的项目');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'linkExistingProjectModal';
+  let listHtml = uniqueProjects.map(name => {
+    const alreadyLinked = ctx.projectNames.includes(name);
+    return '<label style="display:block;padding:8px 10px;border-bottom:1px solid #eee;cursor:pointer;font-size:13px">' +
+      '<input type="checkbox" value="' + escapeHtml(name) + '" ' + (alreadyLinked ? 'checked disabled' : '') +
+      ' style="margin-right:8px" onchange="toggleLinkProject(this, \\'' + escapeHtml(name) + '\\')">' +
+      escapeHtml(name) + (alreadyLinked ? ' <span style="color:#999;font-size:11px">(已关联)</span>' : '') +
+      '</label>';
+  }).join('');
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:480px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px">关联已有项目</h3>
+        <button class="modal-close" onclick="document.getElementById('linkExistingProjectModal').remove()">&times;</button>
+      </div>
+      <div style="margin-bottom:10px">
+        <input type="text" id="linkProjectSearch" placeholder="搜索项目名称..." oninput="filterLinkProjectList()" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div id="linkProjectList" style="max-height:300px;overflow-y:auto;border:1px solid #eee;border-radius:4px">
+        ${listHtml}
+      </div>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn" onclick="document.getElementById('linkExistingProjectModal').remove()">关闭</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+// 切换关联项目选中状态
+function toggleLinkProject(checkbox, name) {
+  const ctx = window._requirementAcceptCtx;
+  if (!ctx) return;
+  if (checkbox.checked) {
+    if (!ctx.projectNames.includes(name)) {
+      ctx.projectNames.push(name);
+    }
+  } else {
+    ctx.projectNames = ctx.projectNames.filter(n => n !== name);
+  }
+  updateAcceptProjectList();
+}
+
+// 搜索过滤关联项目列表
+function filterLinkProjectList() {
+  const keyword = (document.getElementById('linkProjectSearch').value || '').toLowerCase();
+  const items = document.querySelectorAll('#linkProjectList label');
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(keyword) ? '' : 'none';
+  });
 }
 
 // 更新已关联项目标签显示
@@ -6529,6 +6601,29 @@ function showRequirementRejectNotification(reqName, reason) {
     </div>
   `;
   document.body.appendChild(overlay);
+}
+
+// 回退需求（accepted → submitted，重新运行STEP3）
+async function revertRequirement(reqId) {
+  if (!confirm('确定要回退该需求吗？回退后将变为待受理状态，编辑者需重新受理。')) return;
+  try {
+    const resp = await fetch('/api/requirement/revert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: reqId })
+    });
+    if (!resp.ok) throw new Error('回退失败: ' + resp.status);
+    const result = await resp.json();
+    if (result.success) {
+      alert('需求已回退到待受理状态');
+      renderRequirements();
+    } else {
+      alert('回退失败: ' + (result.message || '未知错误'));
+    }
+  } catch (e) {
+    console.error('[revertRequirement] 错误:', e);
+    alert('回退出错: ' + (e.message || e));
+  }
 }
 
 // 归档需求

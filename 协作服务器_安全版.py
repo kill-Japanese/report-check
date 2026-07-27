@@ -2105,9 +2105,9 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': False, 'message': f'当前状态({old_status})不支持拒绝操作'})
             return
 
-        # --- 归档需求（本人 或 edit 权限）---
+        # --- 归档需求（仅 edit 权限）---
         if path == '/api/requirement/archive':
-            if not self.require_auth():
+            if not self.require_permission('edit'):
                 return
             user = self.get_current_user()
             req_id = (data.get('id') or '').strip()
@@ -2122,10 +2122,6 @@ window.CURRENT_USER = {user_info};
             if req['status'] != 'accepted':
                 self.send_json({'success': False, 'message': '需求不是已受理状态，无法归档'})
                 return
-            # 权限检查：本人 或 editor/admin
-            if req['submitter'] != user['username'] and 'edit' not in user.get('permissions', []):
-                self.send_json({'success': False, 'message': '权限不足，仅需求提交者或编辑者可归档'})
-                return
             req['status'] = 'archived'
             req['archive_time'] = datetime.now().isoformat()
             req['archive_type'] = 'manual'
@@ -2137,6 +2133,38 @@ window.CURRENT_USER = {user_info};
             except Exception:
                 pass
             self.send_json({'success': True, 'message': '需求已归档'})
+            return
+
+        # --- 回退需求（仅 edit 权限，accepted → submitted）---
+        if path == '/api/requirement/revert':
+            if not self.require_permission('edit'):
+                return
+            user = self.get_current_user()
+            req_id = (data.get('id') or '').strip()
+            if not req_id:
+                self.send_json({'success': False, 'message': '缺少需求ID'})
+                return
+            req_data = load_requirements()
+            req = next((r for r in req_data['requirements'] if r['id'] == req_id), None)
+            if not req:
+                self.send_json({'success': False, 'message': '需求不存在'})
+                return
+            if req['status'] != 'accepted':
+                self.send_json({'success': False, 'message': '需求不是已受理状态，无法回退'})
+                return
+            req['status'] = 'submitted'
+            req['acceptor'] = ''
+            req['accept_time'] = ''
+            req['auto_archive_deadline'] = ''
+            # 保留已关联项目名（不清除）
+            save_requirements(req_data)
+            _log_requirement_operation('requirement_revert', user['username'], req['name'],
+                                       {'status': 'accepted'}, {'status': 'submitted'})
+            try:
+                threading.Thread(target=auth.sync_to_github, args=('回退需求:' + req['name'],), daemon=True).start()
+            except Exception:
+                pass
+            self.send_json({'success': True, 'message': '需求已回退到待受理状态'})
             return
 
         # --- 删除需求（仅 admin）---
