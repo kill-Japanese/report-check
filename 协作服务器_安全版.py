@@ -1225,6 +1225,18 @@ window.CURRENT_USER = {user_info};
             self.send_json(auth.list_users())
             return
 
+        # --- API: 简单用户列表（仅用户名和邮箱，已登录即可访问）---
+        if path == '/api/users/simple':
+            if not self.require_auth():
+                return
+            users = auth.load_users()
+            result = []
+            for u in users.values():
+                if u.get('status') == 'active':
+                    result.append({'username': u['username'], 'email': u.get('email', '')})
+            self.send_json({'success': True, 'users': result})
+            return
+
         # --- API: 审计日志（需 audit_view 权限）---
         if path == '/api/audit':
             if not self.require_permission('audit_view'):

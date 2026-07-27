@@ -6336,7 +6336,14 @@ function openSubmitRequirementModal() {
         </div>
         <div style="margin-bottom:14px">
           <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">收件人 <span style="color:#999;font-weight:normal">(邮件发送用，可选)</span></label>
-          <input type="text" id="reqEmailTo" placeholder="填写收件人邮箱，多个用逗号分隔" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+          <div id="reqEmailTags" style="min-height:32px;padding:4px 8px;border:1px solid #ddd;border-radius:4px;background:#fafafa;margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+            <span style="color:#bbb;font-size:12px" id="reqEmailPlaceholder">点击右侧按钮选择成员</span>
+          </div>
+          <input type="hidden" id="reqEmailTo">
+          <div style="display:flex;gap:8px">
+            <button class="btn" onclick="openMemberSelectModal()" style="font-size:12px;padding:4px 12px;background:#e0e7ff;color:#4338ca">选择成员</button>
+            <input type="text" id="reqEmailExtra" placeholder="或手动输入邮箱，多个用逗号分隔" style="flex:1;padding:4px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;box-sizing:border-box">
+          </div>
         </div>
       </div>
       <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
@@ -6382,14 +6389,106 @@ async function submitRequirement() {
 function sendRequirementEmail() {
   const name = document.getElementById('reqName').value.trim();
   const description = document.getElementById('reqDescription').value.trim();
-  const to = document.getElementById('reqEmailTo').value.trim();
+  const toHidden = document.getElementById('reqEmailTo').value.trim();
+  const toExtra = document.getElementById('reqEmailExtra').value.trim();
   if (!name) { alert('请先填写需求名称'); return; }
   if (!description) { alert('请先填写需求开发点描述'); return; }
+  let allEmails = [];
+  if (toHidden) { allEmails.push(toHidden); }
+  if (toExtra) { allEmails.push(toExtra); }
   let mailto = 'mailto:';
-  if (to) { mailto += encodeURIComponent(to); }
+  if (allEmails.length > 0) { mailto += encodeURIComponent(allEmails.join(',')); }
   mailto += '?subject=' + encodeURIComponent(name);
   mailto += '&body=' + encodeURIComponent(description);
   window.location.href = mailto;
+}
+
+// 更新已选成员标签显示
+function updateEmailTags() {
+  const container = document.getElementById('reqEmailTags');
+  const placeholder = document.getElementById('reqEmailPlaceholder');
+  const hidden = document.getElementById('reqEmailTo');
+  const emails = (hidden.value || '').split(',').filter(e => e.trim());
+  if (emails.length === 0) {
+    container.innerHTML = '<span style="color:#bbb;font-size:12px" id="reqEmailPlaceholder">点击右侧按钮选择成员</span>';
+    return;
+  }
+  let html = emails.map(e => {
+    return '<span style="display:inline-flex;align-items:center;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:10px;font-size:12px;gap:4px">' +
+      escapeHtml(e) +
+      '<span style="cursor:pointer;font-weight:bold" onclick="removeEmailTag(\'' + e + '\')">&times;</span></span>';
+  }).join('');
+  container.innerHTML = html;
+}
+
+// 移除已选成员标签
+function removeEmailTag(email) {
+  const hidden = document.getElementById('reqEmailTo');
+  let emails = (hidden.value || '').split(',').filter(e => e.trim() && e.trim() !== email);
+  hidden.value = emails.join(',');
+  updateEmailTags();
+}
+
+// 打开成员选择弹窗
+async function openMemberSelectModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'memberSelectModal';
+  overlay.innerHTML = '<div class="modal-box" style="max-width:400px"><div style="text-align:center;padding:40px;color:#999">加载中...</div></div>';
+  document.body.appendChild(overlay);
+  try {
+    const resp = await fetch('/api/users/simple', {credentials: 'include'});
+    if (!resp.ok) throw new Error('加载失败');
+    const data = await resp.json();
+    const users = (data.users || []).filter(u => u.email);
+    if (users.length === 0) {
+      overlay.querySelector('.modal-box').innerHTML = '<div style="text-align:center;padding:40px;color:#999">暂无可选成员</div>';
+      return;
+    }
+    const currentEmails = (document.getElementById('reqEmailTo').value || '').split(',').filter(e => e.trim());
+    let listHtml = users.map(u => {
+      const checked = currentEmails.includes(u.email) ? 'checked' : '';
+      return '<label style="display:block;padding:8px 10px;border-bottom:1px solid #eee;cursor:pointer;font-size:13px">' +
+        '<input type="checkbox" value="' + escapeHtml(u.email) + '" ' + checked + ' style="margin-right:8px" class="member-checkbox">' +
+        escapeHtml(u.username) + ' <span style="color:#999;font-size:11px">' + escapeHtml(u.email) + '</span>' +
+        '</label>';
+    }).join('');
+    overlay.querySelector('.modal-box').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px">选择成员</h3>
+        <button class="modal-close" onclick="document.getElementById('memberSelectModal').remove()">&times;</button>
+      </div>
+      <div style="margin-bottom:10px">
+        <input type="text" id="memberSearch" placeholder="搜索成员..." oninput="filterMemberList()" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div id="memberList" style="max-height:280px;overflow-y:auto;border:1px solid #eee;border-radius:4px">${listHtml}</div>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn" onclick="document.getElementById('memberSelectModal').remove()">取消</button>
+        <button class="btn btn-primary" onclick="confirmMemberSelect()" style="margin-left:8px">确定</button>
+      </div>
+    `;
+  } catch (e) {
+    overlay.querySelector('.modal-box').innerHTML = '<div style="text-align:center;padding:40px;color:red">加载成员列表失败</div>';
+  }
+}
+
+// 搜索过滤成员列表
+function filterMemberList() {
+  const keyword = (document.getElementById('memberSearch').value || '').toLowerCase();
+  const items = document.querySelectorAll('#memberList label');
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(keyword) ? '' : 'none';
+  });
+}
+
+// 确认成员选择
+function confirmMemberSelect() {
+  const checked = document.querySelectorAll('#memberList .member-checkbox:checked');
+  const emails = Array.from(checked).map(cb => cb.value);
+  document.getElementById('reqEmailTo').value = emails.join(',');
+  updateEmailTags();
+  document.getElementById('memberSelectModal').remove();
 }
 
 // 打开受理弹窗
