@@ -411,6 +411,7 @@ def github_api_pull() -> tuple[bool, str]:
     
     # 2. 拉取 data/ 目录下的 JSON 文件（需求导入、协作数据等）
     # 【关键修复】之前不拉取这些文件，导致重新部署后数据丢失
+    # 【关键修复2】对已存在的文件使用智能合并，防止本地新状态被远程旧版本覆盖
     data_dir = os.path.join(BASE_DIR, 'data')
     os.makedirs(data_dir, exist_ok=True)
     for data_file in DATA_SYNC_FILES:
@@ -419,19 +420,82 @@ def github_api_pull() -> tuple[bool, str]:
         
         ok, content, _ = github_api_get_file(data_file)
         if ok and content:
-            with open(filepath, 'wb') as f:
-                f.write(content)
-            if not existed_before:
+            if existed_before:
+                # 文件已存在：使用智能合并，避免覆盖本地新状态
+                _smart_merge_json_file(filepath, content, data_file)
+                restored.append(f'{data_file}(已合并)')
+            else:
+                # 文件不存在：直接写入
+                with open(filepath, 'wb') as f:
+                    f.write(content)
                 restored.append(f'{data_file}(新建)')
                 print(f'[github_api_pull] 恢复文件: {data_file}（新建）')
-            else:
-                restored.append(f'{data_file}(已同步)')
         # 文件在 GitHub 上不存在不算错误（首次使用）
     
     if restored:
         messages.append(f'已同步 {len(restored)} 个文件: {", ".join(restored)}')
     
     return True, '（拉取成功；' + '；'.join(messages) + '）' if messages else '拉取成功'
+
+
+def _smart_merge_json_file(filepath: str, remote_content: bytes, filename: str):
+    """智能合并 JSON 文件，防止本地新状态被远程旧版本覆盖
+    
+    对于 需求导入.json：
+    - 以本地状态为准（本地操作更新，如已归档）
+    - 添加远程新增的需求（其他客户端提交的）
+    
+    对于其他 JSON 文件：
+    - 本地内容更长时保留本地
+    """
+    import json as _json
+    try:
+        # 读取本地内容
+        with open(filepath, 'rb') as f:
+            local_content = f.read()
+        
+        # 如果内容相同，无需操作
+        if local_content == remote_content:
+            return
+        
+        # 对 需求导入.json 使用智能合并
+        if '需求导入' in filename:
+            try:
+                local_data = _json.loads(local_content)
+                remote_data = _json.loads(remote_content)
+                
+                local_reqs = {r['id']: r for r in local_data.get('requirements', [])}
+                remote_reqs = {r['id']: r for r in remote_data.get('requirements', [])}
+                
+                # 合并：本地优先，添加远程新增的需求
+                merged_reqs = list(local_reqs.values())
+                remote_new = 0
+                for req_id, req in remote_reqs.items():
+                    if req_id not in local_reqs:
+                        merged_reqs.append(req)
+                        remote_new += 1
+                
+                merged_data = {
+                    'requirements': merged_reqs,
+                    'meta': local_data.get('meta', remote_data.get('meta', {}))
+                }
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    _json.dump(merged_data, f, ensure_ascii=False, indent=2)
+                print(f'[github_api_pull] 智能合并 {filename}（本地{len(local_reqs)}条 + 远程新增{remote_new}条）')
+            except Exception as e:
+                # 合并失败，保留本地（不覆盖）
+                print(f'[github_api_pull] 智能合并失败，保留本地 {filename}: {e}')
+        else:
+            # 其他 JSON 文件：本地内容更长时保留本地
+            if len(local_content) >= len(remote_content):
+                print(f'[github_api_pull] 保留本地 {filename}（本地数据更多）')
+            else:
+                with open(filepath, 'wb') as f:
+                    f.write(remote_content)
+                print(f'[github_api_pull] 已更新 {filename}（远程数据更多）')
+    except Exception as e:
+        print(f'[github_api_pull] 合并 {filename} 失败: {e}')
 
 
 def github_api_push(message: str = '同步数据') -> tuple[bool, str]:

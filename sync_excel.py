@@ -253,6 +253,10 @@ def git_pull() -> tuple[bool, str]:
         # 【关键修复2】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
         archive_flags = _backup_archive_deleted_flags()
         
+        # 【关键修复5】git pull 前备份 data/ 目录下的 JSON 文件
+        # 防止需求状态（如已归档）被远程旧版本覆盖回待受理
+        data_json_backup = _backup_data_json_files()
+        
         pull = subprocess.run(
             ['git', 'pull', 'origin', 'main'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
@@ -263,6 +267,10 @@ def git_pull() -> tuple[bool, str]:
         
         # 【关键修复4】git pull 后恢复归档/删除标志
         _restore_archive_deleted_flags(archive_flags)
+        
+        # 【关键修复6】git pull 后恢复 data/ 目录下的 JSON 文件
+        # 确保 需求导入.json 等文件的状态不被远程覆盖
+        _restore_data_json_files(data_json_backup)
 
         msg_parts = ['拉取成功']
         if restored:
@@ -424,6 +432,116 @@ def _restore_excel_file(backup_path: str) -> bool:
         except:
             pass
         return False
+
+
+def _backup_data_json_files() -> dict:
+    """备份 data/ 目录下的 JSON 文件（git pull 前调用，防止需求状态被远程覆盖）
+    
+    【关键修复】需求导入.json 中保存了需求的状态（如已归档 archived），
+    如果 git pull 拉取到远程旧版本（如待受理 submitted），会导致状态回退。
+    
+    Returns:
+        dict: {filename: content_bytes} 备份的文件内容
+    """
+    import json as _json
+    backup = {}
+    data_dir = os.path.join(BASE_DIR, 'data')
+    if not os.path.exists(data_dir):
+        return backup
+    try:
+        for fname in os.listdir(data_dir):
+            if not fname.endswith('.json'):
+                continue
+            fpath = os.path.join(data_dir, fname)
+            try:
+                with open(fpath, 'rb') as f:
+                    backup[fname] = f.read()
+            except Exception:
+                pass
+        if backup:
+            print(f'[sync] 已备份 {len(backup)} 个 data/ JSON 文件')
+    except Exception as e:
+        print(f'[sync] 备份 data/ JSON 失败: {e}')
+    return backup
+
+
+def _restore_data_json_files(backup: dict):
+    """恢复 data/ 目录下的 JSON 文件（git pull 后调用）
+    
+    恢复策略（智能合并，不盲目覆盖）：
+    - 需求导入.json：以本地备份为准（本地状态更新，如已归档）
+      但如果本地备份没有远程新增的需求，需要合并
+    - 其他 JSON 文件：本地备份行数更多时恢复
+    
+    【关键】对于 需求导入.json，使用智能合并：
+    - 远程有但本地没有的需求 → 添加（其他客户端提交的新需求）
+    - 本地和远程都有的需求 → 以本地状态为准（本地操作更新）
+    - 本地有但远程没有的需求 → 保留（本地刚提交未同步的）
+    """
+    if not backup:
+        return
+    import json as _json
+    data_dir = os.path.join(BASE_DIR, 'data')
+    
+    for fname, backup_content in backup.items():
+        fpath = os.path.join(data_dir, fname)
+        try:
+            # 如果当前文件不存在，直接恢复
+            if not os.path.exists(fpath):
+                with open(fpath, 'wb') as f:
+                    f.write(backup_content)
+                print(f'[sync] 已恢复 {fname}（文件不存在）')
+                continue
+            
+            # 读取当前（远程覆盖后的）内容
+            with open(fpath, 'rb') as f:
+                current_content = f.read()
+            
+            # 如果内容相同，无需恢复
+            if current_content == backup_content:
+                continue
+            
+            # 对 需求导入.json 使用智能合并
+            if fname == '需求导入.json':
+                try:
+                    local_data = _json.loads(backup_content)
+                    remote_data = _json.loads(current_content)
+                    
+                    local_reqs = {r['id']: r for r in local_data.get('requirements', [])}
+                    remote_reqs = {r['id']: r for r in remote_data.get('requirements', [])}
+                    
+                    # 合并：本地优先，但添加远程新增的需求
+                    merged_reqs = []
+                    # 先添加本地的所有需求（保留本地状态）
+                    for req_id, req in local_reqs.items():
+                        merged_reqs.append(req)
+                    # 添加远程有但本地没有的（其他客户端提交的新需求）
+                    for req_id, req in remote_reqs.items():
+                        if req_id not in local_reqs:
+                            merged_reqs.append(req)
+                    
+                    # 保持 meta 用本地的（ID 序号）
+                    merged_data = {
+                        'requirements': merged_reqs,
+                        'meta': local_data.get('meta', remote_data.get('meta', {}))
+                    }
+                    
+                    with open(fpath, 'w', encoding='utf-8') as f:
+                        _json.dump(merged_data, f, ensure_ascii=False, indent=2)
+                    print(f'[sync] 已智能合并 {fname}（本地{len(local_reqs)}条 + 远程新增{len(remote_reqs) - len(set(local_reqs.keys()) & set(remote_reqs.keys()))}条）')
+                except Exception as e:
+                    # 合并失败，保守恢复本地备份
+                    with open(fpath, 'wb') as f:
+                        f.write(backup_content)
+                    print(f'[sync] 智能合并失败，已恢复本地备份 {fname}: {e}')
+            else:
+                # 其他 JSON 文件：本地备份内容更长时恢复（本地有更多数据）
+                if len(backup_content) > len(current_content):
+                    with open(fpath, 'wb') as f:
+                        f.write(backup_content)
+                    print(f'[sync] 已恢复 {fname}（本地数据更多）')
+        except Exception as e:
+            print(f'[sync] 恢复 {fname} 失败: {e}')
 
 
 # Git 可用性缓存（避免每次都检查 git --version）
