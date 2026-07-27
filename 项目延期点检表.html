@@ -5945,7 +5945,8 @@ window._requirementAcceptCtx = null;
 const REQ_STATUS_MAP = {
   submitted: { label: '待受理', color: '#f0ad4e', bg: '#fcf8e3' },
   accepted:  { label: '已受理', color: '#337ab7', bg: '#d9edf7' },
-  archived:  { label: '已归档', color: '#777',    bg: '#f5f5f5' }
+  archived:  { label: '已归档', color: '#777',    bg: '#f5f5f5' },
+  rejected:  { label: '被拒绝', color: '#dc3545', bg: '#f8d7da' }
 };
 
 // 渲染需求列表
@@ -5956,7 +5957,10 @@ async function renderRequirements() {
     const resp = await fetch('/api/requirements', {method: 'POST', credentials: 'include'});
     if (!resp.ok) throw new Error('获取需求列表失败: ' + resp.status);
     const data = await resp.json();
-    const list = data.requirements || data || [];
+    let list = data.requirements || data || [];
+    // 过滤掉已删除的需求，不在列表中显示
+    list = list.filter(req => req.status !== 'deleted' && req.name !== '[已删除]');
+    window.currentRequirementList = list; // 供编辑弹窗查找用
     // 更新 tab 徽标
     document.getElementById('tabReqCount').textContent = list.length;
 
@@ -5984,6 +5988,7 @@ async function renderRequirements() {
         const isSubmitter = user && req.submitter === user.username;
         const isAccepted = req.status === 'accepted';
         const isArchived = req.status === 'archived';
+        const isRejected = req.status === 'rejected';
         html += '<tr style="border-bottom:1px solid #eee">';
         html += '<td style="padding:8px 10px;white-space:nowrap">' + escapeHtml(req.id || '') + '</td>';
         html += '<td style="padding:8px 10px;white-space:nowrap;font-weight:500">' + escapeHtml(req.name || '') + '</td>';
@@ -6010,6 +6015,10 @@ async function renderRequirements() {
         if (isArchived && (isSubmitter || canEditDirectly())) {
           html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\'' + escapeHtml(req.id) + '\')">拒绝</button>';
         }
+        // 被拒绝需求的编辑按钮：提交者本人可编辑
+        if (isRejected && isSubmitter) {
+          html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openEditRequirementModal(\'' + escapeHtml(req.id) + '\')">编辑</button>';
+        }
         // 删除按钮：canDelete 权限
         if (canDelete()) {
           html += '<button class="btn btn-danger btn-xs" style="margin-right:4px" onclick="deleteRequirement(\'' + escapeHtml(req.id) + '\')">删除</button>';
@@ -6022,6 +6031,78 @@ async function renderRequirements() {
   } catch (e) {
     console.error('[renderRequirements] 错误:', e);
     container.innerHTML = '<div style="text-align:center;padding:60px;color:red">加载需求列表失败: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+// 编辑被拒绝需求的弹窗
+function openEditRequirementModal(reqId) {
+  const req = (window.currentRequirementList || []).find(r => r.id === reqId);
+  if (!req) {
+    alert('需求数据未找到，请刷新列表后重试');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:500px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px">编辑需求</h3>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+      </div>
+      <div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">需求名称 <span style="color:red">*</span></label>
+          <input type="text" id="editReqName" value="${escapeHtml(req.name || '')}" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">需求来源 <span style="color:red">*</span></label>
+          <select id="editReqSource" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+            <option value="">请选择</option>
+            <option value="市场" ${req.source === '市场' ? 'selected' : ''}>市场</option>
+            <option value="客户" ${req.source === '客户' ? 'selected' : ''}>客户</option>
+            <option value="研发内部需求" ${req.source === '研发内部需求' ? 'selected' : ''}>研发内部需求</option>
+          </select>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">需求开发点描述 <span style="color:red">*</span></label>
+          <textarea id="editReqDescription" rows="4" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box;resize:vertical">${escapeHtml(req.description || '')}</textarea>
+        </div>
+      </div>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        <button class="btn btn-primary" onclick="submitEditRequirement('${escapeHtml(reqId)}')" style="margin-left:8px">保存并重新提交</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+// 提交编辑后的需求
+async function submitEditRequirement(reqId) {
+  const name = document.getElementById('editReqName').value.trim();
+  const source = document.getElementById('editReqSource').value;
+  const description = document.getElementById('editReqDescription').value.trim();
+  if (!name) { alert('请输入需求名称'); return; }
+  if (!source) { alert('请选择需求来源'); return; }
+  if (!description) { alert('请输入需求描述'); return; }
+  try {
+    const resp = await fetch('/api/requirement/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: reqId, name, source, description })
+    });
+    if (!resp.ok) throw new Error('编辑失败: ' + resp.status);
+    const result = await resp.json();
+    if (result.success) {
+      document.querySelector('.modal-overlay').remove();
+      alert(result.message || '需求已编辑，回到待受理状态');
+      renderRequirements();
+    } else {
+      alert('编辑失败: ' + (result.message || '未知错误'));
+    }
+  } catch (e) {
+    console.error('[submitEditRequirement] 错误:', e);
+    alert('编辑出错: ' + (e.message || e));
   }
 }
 
@@ -6351,6 +6432,20 @@ function confirmMemberSelect() {
 
 // 打开受理弹窗
 function openAcceptRequirementModal(reqId) {
+  // 【安全校验】打开受理弹窗前，先验证需求当前状态
+  const req = (window.currentRequirementList || []).find(r => r.id === reqId);
+  if (req && req.status !== 'submitted') {
+    alert('该需求状态已变更，无法受理（当前状态: ' + (REQ_STATUS_MAP[req.status]?.label || req.status) + '）');
+    // 刷新列表同步最新状态
+    renderRequirements();
+    return;
+  }
+  // 额外校验：已删除的数据不显示受理弹窗
+  if (req && (req.name === '[已删除]' || req.status === 'deleted')) {
+    alert('该需求已被删除，无法受理');
+    renderRequirements();
+    return;
+  }
   window._requirementAcceptCtx = { reqId, projectNames: [] };
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -6488,6 +6583,17 @@ async function finishAcceptRequirement(reqId) {
     return;
   }
   try {
+    // 【安全校验】受理前再次验证当前需求状态
+    const checkResp = await fetch('/api/requirements', {method: 'POST', credentials: 'include'});
+    if (checkResp.ok) {
+      const checkData = await checkResp.json();
+      const checkList = (checkData.requirements || checkData || []);
+      const currentReq = checkList.find(r => r.id === reqId);
+      if (currentReq && currentReq.status !== 'submitted') {
+        throw new Error('需求不是待受理状态 (当前: ' + (REQ_STATUS_MAP[currentReq.status]?.label || currentReq.status) + ')');
+      }
+    }
+
     // 1. 先关联项目
     const linkResp = await fetch('/api/requirement/link-projects', {
       method: 'POST',
@@ -6517,7 +6623,7 @@ async function finishAcceptRequirement(reqId) {
   }
 }
 
-// 拒绝需求（受理阶段拒绝=删除需求, 归档态拒绝=回退到submitted）
+// 拒绝需求（submitted/accepted→rejected, archived→submitted）
 async function rejectRequirement(reqId) {
   const reason = prompt('请输入拒绝原因（至少2个字）：');
   if (!reason) return;
@@ -6534,9 +6640,9 @@ async function rejectRequirement(reqId) {
     if (!resp.ok) throw new Error('拒绝失败: ' + resp.status);
     const result = await resp.json();
     if (result.success) {
-      // 后端根据原状态自动判断: accepted/submitted→deleted(删除通知), archived→submitted(回退)
-      if (result.reject_reason && result.req_name) {
-        // STEP3.5: 受理阶段拒绝，需求被删除，显示拒绝通知
+      // 后端根据原状态自动判断: accepted/submitted→rejected(状态更新为被拒绝), archived→submitted(回退)
+      if (result.status === 'rejected' && result.reject_reason && result.req_name) {
+        // STEP3.5: 受理阶段拒绝，状态更新为被拒绝，显示拒绝通知
         showRequirementRejectNotification(result.req_name, result.reject_reason);
       } else {
         // STEP6.5: 归档态拒绝，回退到待受理
