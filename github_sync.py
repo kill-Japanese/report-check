@@ -334,6 +334,15 @@ CRITICAL_FILES = [
     '超声波户表脚本.xlsx',
 ]
 
+# data/ 目录下需要拉取的 JSON 文件（重新部署时恢复）
+# 【关键修复】之前 github_api_pull 只拉取 CRITICAL_FILES，
+# 不拉取 data/ 目录，导致重新部署后需求导入和协作数据丢失
+DATA_SYNC_FILES = [
+    'data/需求导入.json',
+    'data/协作数据.json',
+    'data/users.json',
+]
+
 
 def _get_excel_row_count(filepath: str) -> int:
     """获取Excel文件的任务计划表行数"""
@@ -355,11 +364,15 @@ def github_api_pull() -> tuple[bool, str]:
     【关键修复】对于Excel文件，比较行数：
     - 本地行数 > 远程行数 → 不覆盖（本地有新增数据）
     - 本地行数 <= 远程行数 → 正常同步
+    
+    【关键修复2】增加 data/ 目录下 JSON 文件的拉取，
+    防止重新部署后需求导入和协作数据丢失
     """
     messages = []
     restored = []
     import tempfile
     
+    # 1. 拉取关键 Excel 文件
     for filename in CRITICAL_FILES:
         filepath = os.path.join(BASE_DIR, filename)
         existed_before = os.path.exists(filepath)
@@ -395,6 +408,25 @@ def github_api_pull() -> tuple[bool, str]:
                 restored.append(f'{filename}(已同步)')
         elif not ok:
             messages.append(f'{filename}拉取失败')
+    
+    # 2. 拉取 data/ 目录下的 JSON 文件（需求导入、协作数据等）
+    # 【关键修复】之前不拉取这些文件，导致重新部署后数据丢失
+    data_dir = os.path.join(BASE_DIR, 'data')
+    os.makedirs(data_dir, exist_ok=True)
+    for data_file in DATA_SYNC_FILES:
+        filepath = os.path.join(BASE_DIR, data_file)
+        existed_before = os.path.exists(filepath)
+        
+        ok, content, _ = github_api_get_file(data_file)
+        if ok and content:
+            with open(filepath, 'wb') as f:
+                f.write(content)
+            if not existed_before:
+                restored.append(f'{data_file}(新建)')
+                print(f'[github_api_pull] 恢复文件: {data_file}（新建）')
+            else:
+                restored.append(f'{data_file}(已同步)')
+        # 文件在 GitHub 上不存在不算错误（首次使用）
     
     if restored:
         messages.append(f'已同步 {len(restored)} 个文件: {", ".join(restored)}')
