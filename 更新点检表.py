@@ -6240,7 +6240,7 @@ async function renderRequirements() {
     const data = await resp.json();
     let list = data.requirements || data || [];
     // 过滤掉已删除的需求，不在列表中显示
-    list = list.filter(req => req.status !== 'deleted');
+    list = list.filter(req => req.status !== 'deleted' && req.name !== '[已删除]');
     window.currentRequirementList = list; // 供编辑弹窗查找用
     // 更新 tab 徽标
     document.getElementById('tabReqCount').textContent = list.length;
@@ -6713,6 +6713,20 @@ function confirmMemberSelect() {
 
 // 打开受理弹窗
 function openAcceptRequirementModal(reqId) {
+  // 【安全校验】打开受理弹窗前，先验证需求当前状态
+  const req = (window.currentRequirementList || []).find(r => r.id === reqId);
+  if (req && req.status !== 'submitted') {
+    alert('该需求状态已变更，无法受理（当前状态: ' + (REQ_STATUS_MAP[req.status]?.label || req.status) + '）');
+    // 刷新列表同步最新状态
+    renderRequirements();
+    return;
+  }
+  // 额外校验：已删除的数据不显示受理弹窗
+  if (req && (req.name === '[已删除]' || req.status === 'deleted')) {
+    alert('该需求已被删除，无法受理');
+    renderRequirements();
+    return;
+  }
   window._requirementAcceptCtx = { reqId, projectNames: [] };
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -6850,6 +6864,17 @@ async function finishAcceptRequirement(reqId) {
     return;
   }
   try {
+    // 【安全校验】受理前再次验证当前需求状态
+    const checkResp = await fetch('/api/requirements', {method: 'POST', credentials: 'include'});
+    if (checkResp.ok) {
+      const checkData = await checkResp.json();
+      const checkList = (checkData.requirements || checkData || []);
+      const currentReq = checkList.find(r => r.id === reqId);
+      if (currentReq && currentReq.status !== 'submitted') {
+        throw new Error('需求不是待受理状态 (当前: ' + (REQ_STATUS_MAP[currentReq.status]?.label || currentReq.status) + ')');
+      }
+    }
+
     // 1. 先关联项目
     const linkResp = await fetch('/api/requirement/link-projects', {
       method: 'POST',

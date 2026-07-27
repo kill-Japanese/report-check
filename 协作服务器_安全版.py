@@ -1311,6 +1311,9 @@ window.CURRENT_USER = {user_info};
             status_filter = query.get('status', [''])[0]
             req_data = load_requirements()
             reqs = req_data.get('requirements', [])
+            # 【关键修复】服务端也过滤掉已删除的需求，防止前端状态不同步
+            # 同时兼容 name 为 [已删除] 但 status 未正确标记为 deleted 的脏数据
+            reqs = [r for r in reqs if r.get('status') != 'deleted' and r.get('name') != '[已删除]']
             if status_filter:
                 reqs = [r for r in reqs if r.get('status') == status_filter]
             self.send_json({'success': True, 'requirements': reqs})
