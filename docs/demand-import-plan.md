@@ -186,7 +186,7 @@ flowchart TD
   - 关联项目列：显示已关联的项目名（逗号分隔）
   - 受理人、受理时间
 可见操作：
-  - 需求提交者本人：「归档」按钮
+  - 需求提交者本人：「归档」按钮 + 「回退」按钮
   - editor/admin：「归档」按钮 + 「回退」按钮
   - 普通用户：仅查看
 回退说明：
@@ -218,7 +218,7 @@ flowchart TD
 ### STEP 6.5：归档态拒绝（回退到受理）
 
 ```
-操作人：editor / admin
+操作人：提交者本人 或 editor / admin
 触发：点击已归档需求行上的「拒绝」按钮
 输入弹窗：
   - prompt("请输入拒绝原因（将回退到需求导入阶段重新受理）：")
@@ -297,9 +297,9 @@ flowchart TD
 | GET | `/api/requirements` | 已登录 | 获取需求列表，支持 `?status=` 过滤 |
 | POST | `/api/requirement/submit` | 已登录（任意角色） | 提交新需求 |
 | POST | `/api/requirement/accept` | `edit` | 受理需求，状态变为 accepted，设置 3 天归档期限 |
-| POST | `/api/requirement/reject` | `edit` | 拒绝需求（待受理/已受理→删除 / 已归档→回退到 submitted） |
+| POST | `/api/requirement/reject` | `edit` / 本人 或 `edit` | 拒绝需求（待受理/已受理→删除仅edit / 已归档→回退到 submitted 允许本人） |
 | POST | `/api/requirement/archive` | 本人 或 `edit` | 提交者确认归档 |
-| POST | `/api/requirement/revert` | `edit` | 回退已受理需求到 submitted（仅 editor/admin） |
+| POST | `/api/requirement/revert` | 本人 或 `edit` | 回退已受理需求到 submitted（提交者本人或 editor/admin） |
 | POST | `/api/requirement/delete` | `delete` | 抹除需求信息（仅 admin） |
 | POST | `/api/requirement/link-projects` | `edit` | 受理完成后关联项目名称 |
 
@@ -1038,9 +1038,10 @@ async function deleteRequirement(reqId) {
 | 查看需求列表 | 已登录 | `require_auth()` |
 | 提交需求 | 已登录 | `require_auth()`（viewer/editor/admin 均可） |
 | 受理需求 | `edit` | `require_permission('edit')`（editor/admin） |
-| 拒绝需求 | `edit` | `require_permission('edit')`（editor/admin） |
+| 拒绝需求（删除） | `edit` | `require_permission('edit')`（editor/admin） |
+| 拒绝需求（归档态回退） | 本人 或 `edit` | 代码内判断 `req.submitter == username` 或 `has_permission('edit')` |
 | 归档需求 | 本人 或 `edit` | 代码内判断 `req.submitter == username` 或 `has_permission('edit')` |
-| 回退需求 | `edit` | `require_permission('edit')`（editor/admin） |
+| 回退需求 | 本人 或 `edit` | 代码内判断 `req.submitter == username` 或 `has_permission('edit')` |
 | 删除需求 | `delete` | `require_permission('delete')`（仅 admin） |
 | 关联项目 | `edit` | `require_permission('edit')`（editor/admin） |
 

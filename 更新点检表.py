@@ -6262,7 +6262,7 @@ async function renderRequirements() {
       html += '</tr></thead><tbody>';
       list.forEach(req => {
         const st = REQ_STATUS_MAP[req.status] || REQ_STATUS_MAP.submitted;
-        const isSubmitter = user && req.submitter === user;
+        const isSubmitter = user && req.submitter === user.username;
         const isAccepted = req.status === 'accepted';
         const isArchived = req.status === 'archived';
         html += '<tr style="border-bottom:1px solid #eee">';
@@ -6283,12 +6283,12 @@ async function renderRequirements() {
         if (isAccepted && (isSubmitter || canEditDirectly())) {
           html += '<button class="btn btn-xs" style="margin-right:4px;background:#999;color:#fff" onclick="archiveRequirement(\\'' + escapeHtml(req.id) + '\\')">归档</button>';
         }
-        // 回退按钮：仅 editor/admin 可回退已受理的需求到 submitted
-        if (isAccepted && canEditDirectly()) {
+        // 回退按钮：提交者本人 或 editor/admin 可回退已受理的需求到 submitted
+        if (isAccepted && (isSubmitter || canEditDirectly())) {
           html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="revertRequirement(\\'' + escapeHtml(req.id) + '\\')">回退</button>';
         }
-        // 归档态拒绝按钮：editor/admin 可拒绝已归档需求，回退到 submitted
-        if (isArchived && canEditDirectly()) {
+        // 归档态拒绝按钮：提交者本人 或 editor/admin 可拒绝已归档需求，回退到 submitted
+        if (isArchived && (isSubmitter || canEditDirectly())) {
           html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\\'' + escapeHtml(req.id) + '\\')">拒绝</button>';
         }
         // 删除按钮：canDelete 权限

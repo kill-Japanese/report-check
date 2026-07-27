@@ -2046,9 +2046,9 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': True, 'message': '已受理，请在3天内确认归档'})
             return
 
-        # --- 拒绝需求（edit 权限，需填写原因>1字）---
+        # --- 拒绝需求（归档态回退允许本人，删除仅 edit 权限，需填写原因>1字）---
         if path == '/api/requirement/reject':
-            if not self.require_permission('edit'):
+            if not self.require_auth():
                 return
             user = self.get_current_user()
             req_id = (data.get('id') or '').strip()
@@ -2066,8 +2066,11 @@ window.CURRENT_USER = {user_info};
                 return
             old_status = req['status']
             req_name = req['name']
-            # STEP3.5: 受理阶段拒绝 → 删除需求，显示拒绝通知
+            # STEP3.5: 受理阶段拒绝 → 删除需求（仅 editor/admin）
             if old_status in ('submitted', 'accepted'):
+                if 'edit' not in user.get('permissions', []):
+                    self.send_json({'success': False, 'message': '权限不足，仅编辑者可删除需求'})
+                    return
                 req['status'] = 'deleted'
                 req['rejector'] = user['username']
                 req['reject_time'] = datetime.now().isoformat()
@@ -2082,8 +2085,11 @@ window.CURRENT_USER = {user_info};
                     pass
                 self.send_json({'success': True, 'message': '需求已拒绝并删除', 'reject_reason': reason, 'req_name': req_name})
                 return
-            # STEP6.5: 归档态拒绝 → 回退到 submitted
+            # STEP6.5: 归档态拒绝 → 回退到 submitted（提交者本人 或 editor/admin）
             if old_status == 'archived':
+                if req['submitter'] != user['username'] and 'edit' not in user.get('permissions', []):
+                    self.send_json({'success': False, 'message': '权限不足，仅需求提交者或编辑者可回退归档需求'})
+                    return
                 req['status'] = 'submitted'
                 req['rejector'] = user['username']
                 req['reject_time'] = datetime.now().isoformat()
@@ -2139,9 +2145,9 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': True, 'message': '需求已归档'})
             return
 
-        # --- 回退需求（仅 edit 权限，accepted → submitted）---
+        # --- 回退需求（提交者本人 或 edit 权限，accepted → submitted）---
         if path == '/api/requirement/revert':
-            if not self.require_permission('edit'):
+            if not self.require_auth():
                 return
             user = self.get_current_user()
             req_id = (data.get('id') or '').strip()
@@ -2155,6 +2161,10 @@ window.CURRENT_USER = {user_info};
                 return
             if req['status'] != 'accepted':
                 self.send_json({'success': False, 'message': '需求不是已受理状态，无法回退'})
+                return
+            # 权限检查：提交者本人 或 editor/admin
+            if req['submitter'] != user['username'] and 'edit' not in user.get('permissions', []):
+                self.send_json({'success': False, 'message': '权限不足，仅需求提交者或编辑者可回退'})
                 return
             req['status'] = 'submitted'
             req['acceptor'] = ''
