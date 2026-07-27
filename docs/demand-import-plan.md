@@ -64,6 +64,7 @@
 | `submitted` | 需求导入 | 刚提交，无关联项目 |
 | `accepted` | 需求受理 | 编辑者已受理，可能已关联项目 |
 | `archived` | 需求归档 | 提交者确认合理或自动超时归档 |
+| `rejected` | 被拒绝 | 受理阶段被拒绝，提交者可编辑后重新提交 |
 | `deleted` | 需求删除 | 信息抹除（仅系统管理使用） |
 
 ### 2.3 状态流转图
@@ -72,7 +73,9 @@
 flowchart TD
     A["无状态"] -->|STEP1: 任意用户提交| B["submitted<br/>需求导入态"]
     B -->|STEP3: 编辑者受理| C["accepted<br/>需求受理态"]
-    B -->|STEP3.5: 编辑者拒绝<br/>需填写拒绝原因>1字<br/>状态变为已删除| G["deleted<br/>需求删除态"]
+    B -->|STEP3.5: 编辑者拒绝<br/>需填写拒绝原因>1字<br/>状态变为rejected| R["rejected<br/>需求被拒绝态"]
+    C -->|STEP3.5: 编辑者拒绝<br/>状态变为rejected| R
+    R -->|STEP3.6: 提交者编辑<br/>修改内容后重新提交<br/>状态回submitted| B
     C -->|STEP5: 提交者归档| E["archived<br/>需求归档态(手动)"]
     C -->|STEP5: 编辑者回退<br/>accepted→submitted<br/>清除受理人/时间| B
     C -->|STEP7: 3天未操作<br/>系统自动归档| F["archived<br/>需求归档态(自动)"]
@@ -249,7 +252,7 @@ flowchart TD
   - 服务器重启后会立即检查并归档所有超期需求，不会遗漏
 ```
 
-### STEP 3.5：编辑者拒绝（受理阶段 → 删除）
+### STEP 3.5：编辑者拒绝（受理阶段 → 被拒绝）
 
 ```
 操作人：editor / admin
@@ -257,15 +260,37 @@ flowchart TD
 输入弹窗：
   - prompt("请输入拒绝原因（至少2个字）：")
   - 约束：拒绝原因必须大于1个字（>1个字符）
-后端处理（待受理 submitted 或已受理 accepted → 删除）：
-  - 状态 → deleted（需求删除态）
+后端处理（待受理 submitted 或已受理 accepted → rejected）：
+  - 状态 → rejected（需求被拒绝态）
   - 记录拒绝人、拒绝时间、拒绝原因
   - 清除关联的项目名
   - 写入 Excel 操作记录（类型：requirement_reject，变更后含拒绝原因）
 完成后：
   - 向提交者显示「需求被拒绝」通知，包含拒绝原因
-  - 需求从列表移除（状态变为 deleted）
-  - 需求被删除，提交者需重新导入需求（回到 STEP1）
+  - 需求保留在列表中，状态显示为「被拒绝」
+  - 提交者可点击「编辑」按钮修改需求内容，保存后状态回到 submitted，可重新受理
+```
+
+### STEP 3.6：提交者编辑被拒绝的需求
+
+```
+操作人：提交者本人
+触发：点击被拒绝需求行上的「编辑」按钮
+弹窗内容：
+  - 需求名称（输入框，预填充原值）
+  - 需求来源（下拉框：市场/客户/研发内部需求，预填充原值）
+  - 需求开发点描述（文本域，预填充原值）
+后端处理：
+  - 仅 status === 'rejected' 的需求可编辑
+  - 仅提交者本人（req.submitter === user.username）可编辑
+  - 更新 name / source / description
+  - 状态重置为 submitted（回到待受理）
+  - 清空 rejector / reject_time / reject_reason
+  - 写入 Excel 操作记录（类型：requirement_edit）
+  - 触发 GitHub 同步
+完成后：
+  - 关闭弹窗，刷新列表
+  - 需求回到待受理状态，editor/admin 可重新受理
 ```
 
 ### STEP 8：需求删除（系统管理）
@@ -297,7 +322,9 @@ flowchart TD
 | GET | `/api/requirements` | 已登录 | 获取需求列表，支持 `?status=` 过滤 |
 | POST | `/api/requirement/submit` | 已登录（任意角色） | 提交新需求 |
 | POST | `/api/requirement/accept` | `edit` | 受理需求，状态变为 accepted，设置 3 天归档期限 |
-| POST | `/api/requirement/reject` | `edit` / 本人 或 `edit` | 拒绝需求（待受理/已受理→删除仅edit / 已归档→回退到 submitted 允许本人） |
+| POST | `/api/requirement/reject` | `edit` | 拒绝需求（待受理/已受理→rejected，仅 editor/admin） |
+| POST | `/api/requirement/edit` | 本人 | 编辑被拒绝的需求，提交者本人可修改内容并重新提交 |
+| POST | `/api/requirement/reject` | 本人 或 `edit` | 归档态拒绝（已归档→回退到 submitted） |
 | POST | `/api/requirement/archive` | 本人 或 `edit` | 提交者确认归档 |
 | POST | `/api/requirement/revert` | 本人 或 `edit` | 回退已受理需求到 submitted（提交者本人或 editor/admin） |
 | POST | `/api/requirement/delete` | `delete` | 抹除需求信息（仅 admin） |
@@ -323,8 +350,15 @@ flowchart TD
 **POST /api/requirement/reject**
 
 - Body: `{"id": "REQ-20260725-001", "reason": "资源不足"}`
-- Response (待受理/已受理→删除): `{"success": true, "message": "需求已拒绝并删除", "reject_reason": "...", "req_name": "..."}`
+- Response (待受理/已受理→rejected): `{"success": true, "message": "需求已拒绝", "reject_reason": "...", "req_name": "...", "status": "rejected"}`
 - Response (已归档→回退): `{"success": true, "message": "需求已拒绝，回退到待受理状态"}`
+
+**POST /api/requirement/edit**
+
+- Body: `{"id": "REQ-20260725-001", "name": "...", "source": "市场", "description": "..."}`
+- 权限：仅需求提交者本人可编辑
+- 约束：仅 `status === 'rejected'` 的需求可编辑
+- Response: `{"success": true, "message": "需求已编辑，回到待受理状态"}`
 
 **POST /api/requirement/archive**
 
@@ -408,7 +442,8 @@ def _log_requirement_operation(op_type, operator, req_name, before_data, after_d
 
 - `/api/requirement/submit` — 提交新需求
 - `/api/requirement/accept` — 受理需求
-- `/api/requirement/reject` — 拒绝需求（待受理→删除 / 已归档→回退到待受理）
+- `/api/requirement/reject` — 拒绝需求（待受理/已受理→rejected / 已归档→回退到待受理）
+- `/api/requirement/edit` — 编辑被拒绝的需求（仅提交者本人）
 - `/api/requirement/archive` — 归档需求（提交者本人或 editor/admin）
 - `/api/requirement/revert` — 回退已受理需求到 submitted（仅 editor/admin）
 - `/api/requirement/delete` — 删除需求（仅 admin）
@@ -1028,7 +1063,7 @@ async function deleteRequirement(reqId) {
 |----------|----------|------------|------------|
 | `requirement_submit` | 提交需求 | `{}` | `{"status": "submitted"}` |
 | `requirement_accept` | 受理需求 | `{"status": "submitted"}` | `{"status": "accepted"}` |
-| `requirement_reject` | 拒绝需求 | `{"status": "accepted"}` | `{"status": "submitted", "拒绝原因": "..."}` |
+| `requirement_reject` | 拒绝需求 | `{"status": "submitted"}` | `{"status": "rejected", "拒绝原因": "..."}` |
 | `requirement_link_projects` | 关联项目 | `{"linked_projects": []}` | `{"linked_projects": ["巴西NB"]}` |
 | `requirement_archive` | 手动归档 | `{"status": "accepted"}` | `{"status": "archived"}` |
 | `requirement_auto_archive` | 自动归档 | `{"status": "accepted"}` | `{"status": "archived", "原因": "3天未确认"}` |
@@ -1049,7 +1084,8 @@ async function deleteRequirement(reqId) {
 | 查看需求列表 | 已登录 | `require_auth()` |
 | 提交需求 | 已登录 | `require_auth()`（viewer/editor/admin 均可） |
 | 受理需求 | `edit` | `require_permission('edit')`（editor/admin） |
-| 拒绝需求（删除） | `edit` | `require_permission('edit')`（editor/admin） |
+| 拒绝需求（待受理/已受理→rejected） | `edit` | `require_permission('edit')`（editor/admin） |
+| 编辑被拒绝的需求 | 本人 | 代码内判断 `req.submitter == username` |
 | 拒绝需求（归档态回退） | 本人 或 `edit` | 代码内判断 `req.submitter == username` 或 `has_permission('edit')` |
 | 归档需求 | 本人 或 `edit` | 代码内判断 `req.submitter == username` 或 `has_permission('edit')` |
 | 回退需求 | 本人 或 `edit` | 代码内判断 `req.submitter == username` 或 `has_permission('edit')` |
@@ -1079,10 +1115,11 @@ async function deleteRequirement(reqId) {
 
 1. 在 `do_GET` 方法中，`/api/operations/list` 路由之后，新增 `/api/requirements` 路由处理。
 
-2. 在 `do_POST` 方法中，按顺序插入 7 个需求端点：
+2. 在 `do_POST` 方法中，按顺序插入 8 个需求端点：
    - `/api/requirement/submit`
    - `/api/requirement/accept`
    - `/api/requirement/reject`
+   - `/api/requirement/edit`（编辑被拒绝的需求）
    - `/api/requirement/archive`
    - `/api/requirement/revert`（回退，accepted→submitted）
    - `/api/requirement/delete`
@@ -1109,7 +1146,9 @@ async function deleteRequirement(reqId) {
    - `closeAcceptRequirementModal()` — 关闭受理弹窗
    - `updateAcceptProjectList()` — 更新已关联项目标签显示
    - `finishAcceptRequirement(reqId)` — 完成受理（link-projects + accept）
-   - `rejectRequirement(reqId)` — 拒绝需求（待受理→删除 / 已归档→回退到待受理）
+   - `rejectRequirement(reqId)` — 拒绝需求（待受理/已受理→rejected / 已归档→回退到待受理）
+   - `openEditRequirementModal(reqId)` — 编辑被拒绝的需求弹窗（预填充原数据）
+   - `submitEditRequirement(reqId)` — 提交编辑后的需求（调用 /api/requirement/edit）
    - `archiveRequirement(reqId)` — 归档需求
    - `revertRequirement(reqId)` — 回退已受理需求到 submitted
    - `deleteRequirement(reqId)` — 删除需求（仅 admin）

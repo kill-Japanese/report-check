@@ -2078,24 +2078,24 @@ window.CURRENT_USER = {user_info};
                 return
             old_status = req['status']
             req_name = req['name']
-            # STEP3.5: 受理阶段拒绝 → 删除需求（仅 editor/admin）
+            # STEP3.5: 待受理/已受理阶段拒绝 → 状态变为 rejected（仅 editor/admin）
             if old_status in ('submitted', 'accepted'):
                 if 'edit' not in user.get('permissions', []):
-                    self.send_json({'success': False, 'message': '权限不足，仅编辑者可删除需求'})
+                    self.send_json({'success': False, 'message': '权限不足，仅编辑者可拒绝需求'})
                     return
-                req['status'] = 'deleted'
+                req['status'] = 'rejected'
                 req['rejector'] = user['username']
                 req['reject_time'] = datetime.now().isoformat()
                 req['reject_reason'] = reason
                 req['linked_projects'] = []
                 save_requirements(req_data)
                 _log_requirement_operation('requirement_reject', user['username'], req_name,
-                                           {'status': old_status}, {'status': 'deleted', '拒绝原因': reason})
+                                           {'status': old_status}, {'status': 'rejected', '拒绝原因': reason})
                 try:
-                    threading.Thread(target=auth.sync_to_github, args=('拒绝需求(删除):' + req_name,), daemon=True).start()
+                    threading.Thread(target=auth.sync_to_github, args=('拒绝需求:' + req_name,), daemon=True).start()
                 except Exception:
                     pass
-                self.send_json({'success': True, 'message': '需求已拒绝并删除', 'reject_reason': reason, 'req_name': req_name})
+                self.send_json({'success': True, 'message': '需求已拒绝', 'reject_reason': reason, 'req_name': req_name, 'status': 'rejected'})
                 return
             # STEP6.5: 归档态拒绝 → 回退到 submitted（提交者本人 或 editor/admin）
             if old_status == 'archived':
@@ -2121,6 +2121,58 @@ window.CURRENT_USER = {user_info};
                 self.send_json({'success': True, 'message': '需求已拒绝，回退到待受理状态'})
                 return
             self.send_json({'success': False, 'message': f'当前状态({old_status})不支持拒绝操作'})
+            return
+
+        # --- 编辑需求（仅 rejected 状态，提交者本人可编辑）---
+        if path == '/api/requirement/edit':
+            if not self.require_auth():
+                return
+            user = self.get_current_user()
+            req_id = (data.get('id') or '').strip()
+            name = (data.get('name') or '').strip()
+            source = (data.get('source') or '').strip()
+            description = (data.get('description') or '').strip()
+            if not req_id:
+                self.send_json({'success': False, 'message': '缺少需求ID'})
+                return
+            if not name:
+                self.send_json({'success': False, 'message': '需求名称不能为空'})
+                return
+            if not source:
+                self.send_json({'success': False, 'message': '需求来源不能为空'})
+                return
+            if not description:
+                self.send_json({'success': False, 'message': '需求描述不能为空'})
+                return
+            req_data = load_requirements()
+            req = next((r for r in req_data['requirements'] if r['id'] == req_id), None)
+            if not req:
+                self.send_json({'success': False, 'message': '需求不存在'})
+                return
+            if req['status'] != 'rejected':
+                self.send_json({'success': False, 'message': '仅被拒绝的需求可编辑'})
+                return
+            # 权限检查：仅提交者本人可编辑
+            if req['submitter'] != user['username']:
+                self.send_json({'success': False, 'message': '权限不足，仅需求提交者可编辑'})
+                return
+            old_data = {'name': req['name'], 'source': req['source'], 'description': req['description']}
+            req['name'] = name
+            req['source'] = source
+            req['description'] = description
+            # 编辑后重置为 submitted 状态，可重新受理
+            req['status'] = 'submitted'
+            req['rejector'] = ''
+            req['reject_time'] = ''
+            req['reject_reason'] = ''
+            save_requirements(req_data)
+            _log_requirement_operation('requirement_edit', user['username'], name,
+                                       old_data, {'name': name, 'source': source, 'description': description, 'status': 'submitted'})
+            try:
+                threading.Thread(target=auth.sync_to_github, args=('编辑需求:' + name,), daemon=True).start()
+            except Exception:
+                pass
+            self.send_json({'success': True, 'message': '需求已编辑，回到待受理状态'})
             return
 
         # --- 归档需求（提交者本人 或 edit 权限）---
