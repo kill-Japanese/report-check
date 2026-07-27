@@ -9,38 +9,17 @@
     "戴于东": "yudong.dai@hxgroup.com",
     "姚金星": "jinxing.yao@hxgroup.com",
     "张国庆": "guoqing.zhang@hxgroup.com",
-    "魏殷浩": "yinhao.wei@hxgroup.com"
+    "魏殷浩": "yinhao.wei@hxgroup.com",
+    "文春英": "chunying.wen@hxgroup.com",
+    "杨慧霞": "huixia.yang@hxgroup.com",
+    "罗穗安": "suian.luo@hxgroup.com",
+    "肖庆阳": "qingyang.xiao@hxgroup.com",
+    "袁知正": "zhizheng.yuan@hxgroup.com",
+    "贾峰": "feng.jia@hxgroup.com",
+    "采购": "gou.cai@hxgroup.com",
+    "韩燕飞": "yanfei.han@hxgroup.com"
   },
-  "newProjects": [
-    {
-      "id": 216,
-      "部门": "测试",
-      "项目": "TEST demand",
-      "项目开始时间": "1900-01-01",
-      "项目结束时间": "2100-01-01",
-      "项目描述": "新增",
-      "资源类型": "项目经理",
-      "资源名称": "项家祺",
-      "资源开始时间": "2026-07-25",
-      "资源结束时间": "2026-07-25",
-      "日平均工时": 8,
-      "已归档": false
-    },
-    {
-      "id": 217,
-      "部门": "测试",
-      "项目": "TEST demand",
-      "项目开始时间": "1900-01-01",
-      "项目结束时间": "2100-01-01",
-      "项目描述": "2",
-      "资源类型": "项目CHAT",
-      "资源名称": "项家祺",
-      "资源开始时间": "2026-07-25",
-      "资源结束时间": "2026-07-25",
-      "日平均工时": 8,
-      "已归档": false
-    }
-  ],
+  "newProjects": [],
   "deletedIds": [],
-  "lastUpdate": "2026-07-25T07:16:46.473213"
+  "lastUpdate": "2026-07-27T00:18:59.305501"
 }
