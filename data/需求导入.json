@@ -1,7 +1,28 @@
 {
-  "requirements": [],
+  "requirements": [
+    {
+      "id": "REQ-20260727-001",
+      "name": "测试需求看板",
+      "source": "研发内部需求",
+      "description": "121345",
+      "status": "accepted",
+      "submitter": "xjq",
+      "submit_time": "2026-07-27T05:40:52.432879",
+      "acceptor": "xjq",
+      "accept_time": "2026-07-27T05:41:16.125440",
+      "linked_projects": [
+        "测试看板"
+      ],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": "2026-07-30T05:41:16.125440"
+    }
+  ],
   "meta": {
-    "last_id_date": "",
-    "last_id_seq": 0
+    "last_id_date": "20260727",
+    "last_id_seq": 1
   }
 }
