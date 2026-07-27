@@ -187,3 +187,4 @@
 [2026-07-27 07:10:07] LOGIN | 用户: dajinyu | 登录成功
 [2026-07-27 07:12:01] LOGIN | 用户: dajinyu | 登录成功
 [2026-07-27 07:31:22] USER_CREATE | 用户: admin | 创建用户: wcw, 角色: viewer
+[2026-07-27 07:32:00] USER_CREATE | 用户: admin | 创建用户: yjx, 角色: viewer
