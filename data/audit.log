@@ -189,3 +189,4 @@
 [2026-07-27 07:31:22] USER_CREATE | 用户: admin | 创建用户: wcw, 角色: viewer
 [2026-07-27 07:32:00] USER_CREATE | 用户: admin | 创建用户: yjx, 角色: viewer
 [2026-07-27 07:32:34] USER_CREATE | 用户: admin | 创建用户: shj, 角色: viewer
+[2026-07-27 07:32:53] USER_DELETE | 用户: admin | 删除用户: bugtest_3439
