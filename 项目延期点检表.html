@@ -784,15 +784,16 @@
     <button class="btn" style="background:#667eea;color:white" onclick="generateAllEmails()">📧 延期催办邮件生成</button>
     <button class="btn" style="background:#f59e0b;color:white" onclick="openEmailClient()">📨 邮件客户端发送</button>
     <button class="btn" style="background:#10b981;color:white" onclick="sendAllEmails()">📤 自动发送</button>
-    <button class="btn" style="background:#ec4899;color:white" onclick="openAddProjectModal()">➕ 添加项目</button>
-    <button class="btn" style="background:#8b5cf6;color:white" onclick="openImportModal()">📥 从Project导入</button>
+    <button class="btn" style="background:#ec4899;color:white" onclick="openAddProjectModal()" id="btnAddProject">➕ 添加项目</button>
+    <button class="btn" style="background:#8b5cf6;color:white" onclick="openImportModal()" id="btnImportProject">📥 从Project导入</button>
     <button class="btn" style="background:#14b8a6;color:white" onclick="openMemberManager()">👥 成员管理</button>
     <button class="btn" style="background:#f97316;color:white" onclick="syncProjectsToExcel()">🔄 同步到Excel</button>
     <button class="btn" style="background:#6366f1;color:white" onclick="selectAllVisible()">☑️ 全选当前</button>
     <button class="btn" style="background:#8b5cf6;color:white" onclick="clearSelection()">⬜ 清空选择</button>
     <button class="btn" style="background:#10b981;color:white" onclick="batchArchive()">📦 批量归档</button>
     <button class="btn" style="background:#06b6d4;color:white" onclick="batchRestore()">↩️ 批量恢复</button>
-    <button class="btn" style="background:#ef4444;color:white" onclick="batchDelete()">🗑️ 批量删除</button>
+    <button class="btn" style="background:#ef4444;color:white" onclick="batchDelete()" id="btnBatchDelete">🗑️ 批量删除</button>
+    <button class="btn" style="background:#f59e0b;color:white;display:none" onclick="openApprovalPanel()" id="btnApproval">🔔 待审批<span id="approvalCount" style="background:#ef4444;color:white;border-radius:10px;padding:0 6px;font-size:11px;margin-left:4px;display:none">0</span></button>
     <span id="selectionCount" style="color:#6b7280;font-size:13px;margin-left:8px"></span>
   </div>
 
@@ -890,6 +891,7 @@
     <div class="tab active" data-tab="all">📊 全部项目 <span class="badge" id="tabAllCount">0</span></div>
     <div class="tab" data-tab="byDept">🏢 按市场 <span class="badge" id="tabDeptCount">0</span></div>
     <div class="tab" data-tab="archived">📦 已归档 <span class="badge" id="tabArchivedCount">0</span></div>
+    <div class="tab" data-tab="requirements">需求导入 <span class="badge" id="tabReqCount">0</span></div>
   </div>
 
   <div id="tableContainer"></div>
@@ -912,6 +914,432 @@ function collabIsEnabled() {
   return COLLAB_ENABLED;
 }
 
+// ==================== 角色 & 权限 辅助函数 ====================
+function getCurrentUser() {
+  return window.CURRENT_USER || null;
+}
+function getUserRole() {
+  const u = getCurrentUser();
+  return u ? u.role : '';
+}
+function getUserPermissions() {
+  const u = getCurrentUser();
+  return u ? (u.permissions || []) : [];
+}
+function hasPermission(perm) {
+  if (!collabIsEnabled()) return true;  // 非协作模式下所有权限都有
+  return getUserPermissions().includes(perm);
+}
+// 是否可以直接编辑/归档（跳过审批）
+function canEditDirectly() {
+  return hasPermission('edit');
+}
+// 是否可以审批他人申请
+function canApprove() {
+  return hasPermission('approve');
+}
+// 是否可以删除
+function canDelete() {
+  return hasPermission('delete');
+}
+// 是否需要走审批（viewer的归档/编辑需要审批）
+function needsApproval() {
+  return collabIsEnabled() && !canEditDirectly();
+}
+
+// ==================== 审批系统前端函数 ====================
+
+// 提交审批申请
+async function submitApproval(operationType, ids, beforeData, afterData, projectNames) {
+  const projects = ids.map(id => RAW_DATA.allProjects.find(x => x.id === id)).filter(Boolean);
+  // 如果调用方已经传入了项目名，直接用；否则自己查
+  if (!projectNames || projectNames.length === 0) {
+    projectNames = projects.map(p => {
+      const name = p.项目 || p['项目名称'] || p['项目名'] || p.name || p.project || '';
+      return name.trim();
+    }).filter(n => n);
+  }
+  if (projectNames.length === 0) projectNames.push('未知项目');
+  
+  const resp = await fetch('/api/approval/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      operation_type: operationType,
+      project_ids: ids,
+      project_names: projectNames,
+      before_data: beforeData || {},
+      after_data: afterData || {}
+    })
+  });
+  const result = await resp.json();
+  if (result.success) {
+    alert('✅ ' + result.message);
+    refreshRawData();
+  } else {
+    alert('❌ ' + result.message);
+  }
+  return result;
+}
+
+// 获取待我审批的数量
+async function getApprovalCount() {
+  if (!canApprove()) return 0;
+  try {
+    const resp = await fetch('/api/approval/count');
+    if (resp.ok) {
+      const data = await resp.json();
+      return data.count || 0;
+    }
+  } catch (e) {}
+  return 0;
+}
+
+// 获取审批列表
+async function getApprovalList(status) {
+  try {
+    const resp = await fetch('/api/approval/list?status=' + (status || 'pending'));
+    if (resp.ok) {
+      const data = await resp.json();
+      return data.records || [];
+    }
+  } catch (e) {}
+  return [];
+}
+
+// 审批通过
+async function approveRequest(opId) {
+  if (!confirm('确定通过此审批申请？')) return;
+  const resp = await fetch('/api/approval/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op_id: opId })
+  });
+  const result = await resp.json();
+  alert(result.success ? '✅ 已通过' : '❌ ' + result.message);
+  if (result.success) {
+    refreshRawData();
+    loadApprovalPanel();
+  }
+}
+
+// 审批拒绝
+async function rejectRequest(opId) {
+  const reason = prompt('请输入拒绝原因：');
+  if (reason === null) return;
+  const resp = await fetch('/api/approval/reject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op_id: opId, reason: reason || '' })
+  });
+  const result = await resp.json();
+  alert(result.success ? '✅ 已拒绝' : '❌ ' + result.message);
+  if (result.success) {
+    refreshRawData();
+    loadApprovalPanel();
+  }
+}
+
+// 撤回审批申请
+async function cancelRequest(opId) {
+  if (!confirm('确定要撤回这条审批申请吗？')) return;
+  const resp = await fetch('/api/approval/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op_id: opId })
+  });
+  const result = await resp.json();
+  alert(result.success ? '✅ 已撤回' : '❌ ' + result.message);
+  if (result.success) {
+    refreshRawData();
+    loadApprovalPanel();
+  }
+}
+
+// 更新审批按钮显示
+async function updateApprovalBadge() {
+  const btn = document.getElementById('btnApproval');
+  const countEl = document.getElementById('approvalCount');
+  if (!btn || !countEl) return;
+  
+  // 所有登录用户都显示审批按钮（viewer也需要看"我发起的"）
+  if (collabIsEnabled()) {
+    btn.style.display = '';
+    // 修改按钮文字：有审批权的显示"待审批"，其他显示"我的审批"
+    btn.innerHTML = canApprove() 
+      ? '🔔 待审批<span id="approvalCount" style="background:#ef4444;color:white;border-radius:10px;padding:0 6px;font-size:11px;margin-left:4px;display:none">0</span>'
+      : '📋 我的审批';
+    
+    // 只有有审批权的用户才显示红点数量
+    if (canApprove()) {
+      const count = await getApprovalCount();
+      const newCountEl = document.getElementById('approvalCount');
+      if (newCountEl) {
+        if (count > 0) {
+          newCountEl.textContent = count;
+          newCountEl.style.display = '';
+        } else {
+          newCountEl.style.display = 'none';
+        }
+      }
+    }
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+// 打开审批面板
+function openApprovalPanel() {
+  const existing = document.getElementById('approvalPanelOverlay');
+  if (existing) { existing.remove(); }
+  
+  const modal = document.createElement('div');
+  modal.id = 'approvalPanelOverlay';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:1000px;max-height:80vh;display:flex;flex-direction:column">
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      <h3>🔔 审批管理</h3>
+      
+      <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e5e7eb">
+        <button id="approvalTabPending" class="approval-tab-btn" onclick="switchApprovalTab('pending')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid #f59e0b;color:#f59e0b;font-weight:600;${canApprove() ? '' : 'display:none'}">⏳ 待我审批</button>
+        <button id="approvalTabMine" class="approval-tab-btn" onclick="switchApprovalTab('mine')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📝 我发起的</button>
+        <button id="approvalTabAll" class="approval-tab-btn" onclick="switchApprovalTab('all')" style="padding:8px 16px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600">📋 全部记录</button>
+      </div>
+      
+      <div id="approvalListContainer" style="flex:1;overflow-y:auto;min-height:300px">
+        <div style="text-align:center;color:#9ca3af;padding:40px">加载中...</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  // viewer默认跳转到"我发起的"
+  switchApprovalTab(canApprove() ? 'pending' : 'mine');
+}
+
+// 切换审批Tab
+let _currentApprovalTab = 'pending';
+function switchApprovalTab(tab) {
+  _currentApprovalTab = tab;
+  
+  // 更新Tab样式
+  ['pending', 'mine', 'all'].forEach(t => {
+    const btn = document.getElementById('approvalTab' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (btn) {
+      if (t === tab) {
+        btn.style.borderBottomColor = '#f59e0b';
+        btn.style.color = '#f59e0b';
+      } else {
+        btn.style.borderBottomColor = 'transparent';
+        btn.style.color = '#6b7280';
+      }
+    }
+  });
+  
+  loadApprovalPanel();
+}
+
+// 加载审批列表
+async function loadApprovalPanel() {
+  const container = document.getElementById('approvalListContainer');
+  if (!container) return;
+  
+  let status = _currentApprovalTab;
+  if (status === 'mine') status = 'all';
+  
+  const records = await getApprovalList(status);
+  const currentUser = getCurrentUser();
+  const username = currentUser ? currentUser.username : '';
+  
+  let filtered = records;
+  if (_currentApprovalTab === 'mine') {
+    filtered = records.filter(r => r['操作人'] === username);
+  } else if (_currentApprovalTab === 'pending') {
+    filtered = records.filter(r => r['状态'] === 'pending');
+  }
+  
+  if (filtered.length === 0) {
+    container.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:40px">暂无记录</div>';
+    return;
+  }
+  
+  const opTypeMap = {
+    'archive': '归档', 'unarchive': '恢复归档', 'edit': '编辑',
+    'batch_archive': '批量归档', 'batch_unarchive': '批量恢复',
+    'delete': '删除', 'batch_delete': '批量删除'
+  };
+  const statusMap = {
+    'pending': { text: '待审批', color: '#f59e0b' },
+    'approved': { text: '已通过', color: '#10b981' },
+    'rejected': { text: '已拒绝', color: '#ef4444' },
+    'cancelled': { text: '已撤回', color: '#6b7280' }
+  };
+  
+  let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+  filtered.forEach(r => {
+    const st = statusMap[r['状态']] || { text: r['状态'], color: '#6b7280' };
+    const opType = opTypeMap[r['操作类型']] || r['操作类型'];
+    const isPending = r['状态'] === 'pending';
+    const canAct = isPending && canApprove() && r['操作人'] !== username;
+    const canCancel = isPending && r['操作人'] === username;
+    
+    // 字段中文名映射
+    const fieldLabelMap = {
+      '部门': '部门',
+      '项目': '项目名称',
+      '项目开始时间': '项目开始时间',
+      '项目结束时间': '项目结束时间',
+      '项目描述': '项目描述',
+      '资源类型': '资源类型',
+      '资源名称': '负责人',
+      '资源开始时间': '开始时间',
+      '资源结束时间': '结束时间',
+      '日平均工时': '日平均工时'
+    };
+    
+    // 生成变更内容HTML（edit、add、archive类型都显示项目信息）
+    let editChangesHtml = '';
+    if (r['操作类型'] === 'edit' || r['操作类型'] === 'add' || r['操作类型'] === 'archive' || r['操作类型'] === 'unarchive' || r['操作类型'] === 'batch_archive' || r['操作类型'] === 'batch_unarchive') {
+      let beforeData = r['变更前内容'] || {};
+      let afterData = r['变更后内容'] || {};
+      // 处理JSON字符串
+      if (typeof beforeData === 'string') { try { beforeData = JSON.parse(beforeData); } catch(e) {} }
+      if (typeof afterData === 'string') { try { afterData = JSON.parse(afterData); } catch(e) {} }
+      
+      // 【新增】项目基本信息区域（始终显示，不区分是否变化）
+      const isArchiveType = ['archive', 'unarchive', 'batch_archive', 'batch_unarchive'].includes(r['操作类型']);
+      const infoFields = ['部门', '项目', '项目描述', '资源类型', '资源名称'];
+      const infoValues = [];
+      for (const key of infoFields) {
+        const val = afterData[key] || beforeData[key] || '';
+        if (val !== undefined && val !== '' && val !== null) {
+          infoValues.push({ label: fieldLabelMap[key] || key, value: val });
+        }
+      }
+      if (infoValues.length > 0) {
+        editChangesHtml += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px;margin:8px 0">';
+        editChangesHtml += '<div style="font-weight:600;color:#475569;font-size:12px;margin-bottom:4px">📋 项目信息</div>';
+        editChangesHtml += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+        infoValues.forEach(f => {
+          editChangesHtml += `<span style="font-size:12px;color:#374151;background:#fff;padding:2px 8px;border-radius:4px;border:1px solid #e2e8f0"><strong>${f.label}：</strong>${f.value}</span>`;
+        });
+        editChangesHtml += '</div></div>';
+      }
+      
+      const changedFields = [];
+      // 对于add类型，显示所有有值的字段（排除已显示的基本信息）
+      const infoKeys = new Set(infoFields);
+      if (r['操作类型'] === 'add') {
+        for (const key of Object.keys(fieldLabelMap)) {
+          if (infoKeys.has(key)) continue; // 基本信息已显示，跳过
+          const val = afterData[key];
+          if (val !== undefined && val !== '' && val !== null) {
+            changedFields.push({
+              label: fieldLabelMap[key] || key,
+              before: '',
+              after: val
+            });
+          }
+        }
+      } else {
+        // edit类型：只显示变化的字段
+        for (const key of Object.keys(fieldLabelMap)) {
+          const beforeVal = beforeData[key];
+          const afterVal = afterData[key];
+          if (String(beforeVal) !== String(afterVal)) {
+            changedFields.push({
+              label: fieldLabelMap[key] || key,
+              before: beforeVal,
+              after: afterVal
+            });
+          }
+        }
+      }
+      
+      if (changedFields.length > 0 || r['操作类型'] === 'add') {
+        const titleIcon = r['操作类型'] === 'add' ? '➕' : '📝';
+        const titleText = r['操作类型'] === 'add' ? '新增内容：' : '变更内容：';
+        editChangesHtml += '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px;margin:8px 0">';
+        editChangesHtml += `<div style="font-weight:600;color:#0369a1;font-size:13px;margin-bottom:6px">${titleIcon} ${titleText}</div>`;
+        changedFields.forEach(f => {
+          if (r['操作类型'] === 'add') {
+            editChangesHtml += `<div style="font-size:12px;color:#374151;line-height:1.8">
+              <strong>${f.label}：</strong>
+              <span style="color:#10b981;font-weight:500">${f.after}</span>
+            </div>`;
+          } else {
+            editChangesHtml += `<div style="font-size:12px;color:#374151;line-height:1.8">
+              <strong>${f.label}：</strong>
+              <span style="color:#ef4444;text-decoration:line-through">${f.before !== undefined && f.before !== '' ? f.before : '（空）'}</span>
+              <span style="color:#6b7280;margin:0 4px">→</span>
+              <span style="color:#10b981;font-weight:500">${f.after !== undefined && f.after !== '' ? f.after : '（空）'}</span>
+            </div>`;
+          }
+        });
+        editChangesHtml += '</div>';
+      }
+    }
+    
+    html += `
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;background:white">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <span style="font-weight:600;color:#111827">${opType}</span>
+            <span style="margin-left:8px;padding:2px 8px;border-radius:4px;background:${st.color};color:white;font-size:12px">${st.text}</span>
+          </div>
+          <span style="color:#6b7280;font-size:12px">${r['操作时间'] || ''}</span>
+        </div>
+        <div style="color:#374151;font-size:13px;margin-bottom:4px">
+          <strong>操作人：</strong>${r['操作人'] || '未知'}
+        </div>
+        <div style="color:#374151;font-size:13px;margin-bottom:4px">
+          <strong>项目：</strong>${Array.isArray(r['项目名列表']) ? r['项目名列表'].join('、') : (r['项目名列表'] || '无')}
+        </div>
+        ${editChangesHtml}
+        ${r['审批人'] ? `<div style="color:#374151;font-size:13px;margin-bottom:4px"><strong>审批人：</strong>${r['审批人']}${r['审批时间'] ? ' (' + r['审批时间'] + ')' : ''}</div>` : ''}
+        ${canAct ? `
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button class="btn" style="background:#10b981;color:white" onclick="approveRequest('${r['操作ID']}')">✓ 通过</button>
+            <button class="btn" style="background:#ef4444;color:white" onclick="rejectRequest('${r['操作ID']}')">✗ 拒绝</button>
+          </div>
+        ` : ''}
+        ${canCancel ? `
+          <div style="margin-top:8px">
+            <button class="btn" style="background:#6b7280;color:white" onclick="cancelRequest('${r['操作ID']}')">↩️ 撤回申请</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// 更新权限相关的UI显示
+function updatePermissionUI() {
+  // 删除按钮：仅admin可见
+  const btnDelete = document.getElementById('btnBatchDelete');
+  if (btnDelete) {
+    btnDelete.style.display = canDelete() ? '' : 'none';
+  }
+  
+  // 添加项目按钮：有edit权限或submit_approval权限都可见（viewer可以申请添加，需审批）
+  const btnAdd = document.getElementById('btnAddProject');
+  if (btnAdd) {
+    const canAdd = hasPermission('edit') || hasPermission('submit_approval');
+    btnAdd.style.display = canAdd ? '' : 'none';
+  }
+  
+  // 从Project导入按钮：仅editor/admin可见（viewer没有批量导入权限）
+  const btnImport = document.getElementById('btnImportProject');
+  if (btnImport) {
+    btnImport.style.display = canEditDirectly() ? '' : 'none';
+  }
+  
+  // 审批按钮和红点
+  updateApprovalBadge();
+}
+
 // ==================== 统一的归档判断函数 ====================
 // 【简化方案】协作模式下只使用服务器返回的 p['已归档'] 字段
 // 非协作模式下使用本地 archived 对象（兼容）
@@ -925,7 +1353,7 @@ function isProjectArchived(p) {
   return !!archived[p.id];
 }
 
-const RAW_DATA = {"today": "2026-07-23", "threeDaysLater": "2026-07-26", "stats": {"total": 69, "delayed": 14, "urgent": 3, "warning": 4}, "allProjects": [{"id": 3, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-10-23", "资源剩余天数": 92, "日平均工时": 1, "已归档": false}, {"id": 4, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "固件设计文档", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 7, "日平均工时": 4, "已归档": false}, {"id": 5, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "袁琮欣", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-23", "资源剩余天数": 62, "日平均工时": 8, "已归档": false}, {"id": 6, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "李昊龙", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-23", "资源剩余天数": 62, "日平均工时": 8, "已归档": false}, {"id": 7, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-L660测试/BC680", "资源名称": "袁琮欣", "资源开始时间": "2026-07-15", "资源结束时间": "2026-07-18", "资源剩余天数": -5, "日平均工时": 0.5, "已归档": false}, {"id": 8, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26825, "日平均工时": 1, "已归档": false}, {"id": 9, "部门": "巴西经营中心", "项目": "巴西NB-V3.1预研", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-三轴传感器预研", "资源名称": "张国庆", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-03", "资源剩余天数": 11, "日平均工时": 4, "已归档": false}, {"id": 10, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-10-23", "资源剩余天数": 92, "日平均工时": 1, "已归档": false}, {"id": 11, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 12, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 7, "日平均工时": 4, "已归档": false}, {"id": 13, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发", "资源名称": "朱葵阳", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -1, "日平均工时": 8, "已归档": false}, {"id": 14, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-认证跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-07-22", "资源结束时间": "2026-09-23", "资源剩余天数": 62, "日平均工时": 1.5, "已归档": false}, {"id": 15, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 0, "已归档": false}, {"id": 16, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26825, "日平均工时": 0.5, "已归档": false}, {"id": 17, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 7, "日平均工时": 4, "已归档": false}, {"id": 18, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-调试样机", "资源名称": "毛文豪", "资源开始时间": "2026-07-02", "资源结束时间": "2026-07-27", "资源剩余天数": 4, "日平均工时": 8, "已归档": false}, {"id": 19, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发设计", "资源名称": "朱葵阳", "资源开始时间": "2026-07-17", "资源结束时间": "2026-08-13", "资源剩余天数": 21, "日平均工时": 6, "已归档": false}, {"id": 20, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发设计", "资源名称": "毛文豪", "资源开始时间": "2026-07-27", "资源结束时间": "2026-08-15", "资源剩余天数": 23, "日平均工时": 6, "已归档": false}, {"id": 21, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 22, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-08-15", "资源结束时间": "2026-10-05", "资源剩余天数": 74, "日平均工时": 2, "已归档": false}, {"id": 23, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-认证跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-10-05", "资源结束时间": "2026-12-04", "资源剩余天数": 134, "日平均工时": 1, "已归档": false}, {"id": 24, "部门": "巴西经营中心", "项目": "巴西LoRa-Walkby方案", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TAG26帧修改", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-07-25", "资源剩余天数": 2, "日平均工时": 2, "已归档": false}, {"id": 25, "部门": "拉美", "项目": "智利-NB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "特殊-联调阶段\n7月2日-系统IP申请问题，未完成联调\n7月8日-预约二次联调", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-24", "资源剩余天数": 1, "日平均工时": 3, "已归档": false}, {"id": 26, "部门": "拉美", "项目": "秘鲁-CAT1", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 6, "已归档": false}, {"id": 27, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "项目经理", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-10", "资源剩余天数": 49, "日平均工时": 0.5, "已归档": false}, {"id": 28, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-测试", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -1, "日平均工时": 4, "已归档": false}, {"id": 29, "部门": "拉美", "项目": "多米尼加-补货", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "补充验证", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-31", "资源剩余天数": 8, "日平均工时": 6, "已归档": false}, {"id": 30, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-27", "资源结束时间": "2026-08-05", "资源剩余天数": 13, "日平均工时": 1, "已归档": false}, {"id": 31, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 0.8, "已归档": false}, {"id": 32, "部门": "欧洲", "项目": "WMBUS-OMS", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4-设计开发阶段", "资源类型": "固件工程师", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-08", "资源剩余天数": -15, "日平均工时": 6, "已归档": false}, {"id": 35, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-30", "资源剩余天数": 69, "日平均工时": 0.5, "已归档": false}, {"id": 36, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件设计-硬件设计文档", "资源名称": "童景顺", "资源开始时间": "2026-07-18", "资源结束时间": "2026-08-06", "资源剩余天数": 14, "日平均工时": 2, "已归档": false}, {"id": 37, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB设计", "资源名称": "童景顺", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-11", "资源剩余天数": 19, "日平均工时": 7, "已归档": false}, {"id": 38, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件概要设计", "资源名称": "项家祺", "资源开始时间": "2026-07-18", "资源结束时间": "2026-08-07", "资源剩余天数": 15, "日平均工时": 2, "已归档": false}, {"id": 39, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件开发-乌拉圭版本移植", "资源名称": "李昊龙", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-30", "资源剩余天数": 38, "日平均工时": 1, "已归档": false}, {"id": 40, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件开发-乌拉圭版本移植", "资源名称": "袁琮欣", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-30", "资源剩余天数": 38, "日平均工时": 1, "已归档": false}, {"id": 41, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件内测", "资源名称": "张国庆", "资源开始时间": "2026-09-11", "资源结束时间": "2026-09-14", "资源剩余天数": 53, "日平均工时": 8, "已归档": false}, {"id": 42, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-内容修复", "资源名称": "袁琮欣", "资源开始时间": "2026-09-13", "资源结束时间": "2026-09-13", "资源剩余天数": 52, "日平均工时": 8, "已归档": false}, {"id": 43, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "袁琮欣", "资源开始时间": "2026-09-14", "资源结束时间": "2026-10-16", "资源剩余天数": 85, "日平均工时": 1, "已归档": false}, {"id": 44, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "李昊龙", "资源开始时间": "2026-09-14", "资源结束时间": "2026-10-16", "资源剩余天数": 85, "日平均工时": 1.5, "已归档": false}, {"id": 45, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "乌拉圭投标样机", "资源名称": "童景顺", "资源开始时间": "2026-09-30", "资源结束时间": "2026-09-30", "资源剩余天数": 69, "日平均工时": 0, "已归档": false}, {"id": 46, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-08-24", "资源剩余天数": 32, "日平均工时": 0.5, "已归档": false}, {"id": 47, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "毛文豪", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -1, "日平均工时": 8, "已归档": false}, {"id": 48, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "毛文豪", "资源开始时间": "2026-07-22", "资源结束时间": "2026-07-25", "资源剩余天数": 2, "日平均工时": 7, "已归档": false}, {"id": 49, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "毛文豪", "资源开始时间": "2026-07-25", "资源结束时间": "2026-08-09", "资源剩余天数": 17, "日平均工时": 2, "已归档": false}, {"id": 50, "部门": "亚洲", "项目": "印尼 BLE表", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "危才文", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 4, "已归档": false}, {"id": 51, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "硬件工程师", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 2, "已归档": false}, {"id": 52, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -13, "日平均工时": 6, "已归档": false}, {"id": 53, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器驱动开发", "资源名称": "魏殷浩", "资源开始时间": "2026-07-20", "资源结束时间": "2026-07-31", "资源剩余天数": 8, "日平均工时": 7, "已归档": false}, {"id": 54, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "硬件工程师-压力功能性能测试", "资源名称": "姚金星", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -13, "日平均工时": 4, "已归档": false}, {"id": 55, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-开发", "资源名称": "危才文", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-04", "资源剩余天数": 12, "日平均工时": 6, "已归档": false}, {"id": 56, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-回归测试", "资源名称": "危才文", "资源开始时间": "2026-08-05", "资源结束时间": "2026-08-15", "资源剩余天数": 23, "日平均工时": 2, "已归档": false}, {"id": 57, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-集成测试配合", "资源名称": "危才文", "资源开始时间": "2026-08-16", "资源结束时间": "2026-09-15", "资源剩余天数": 54, "日平均工时": 1, "已归档": false}, {"id": 58, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-lay out", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 59, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-天线破独测试（LoRa+LoRaWAN）", "资源名称": "姚金星", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 60, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-天线破独测试（LoRa+LoRaWAN）", "资源名称": "舒杰", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 0, "已归档": false}, {"id": 61, "部门": "产品竞争力提升", "项目": "DLMS -GCP", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "GCP-BETA测试跟踪", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "2026-08-30", "资源结束时间": "2026-10-08", "资源剩余天数": 77, "日平均工时": 0.5, "已归档": false}, {"id": 62, "部门": "产品竞争力提升", "项目": "DLMS -GCP", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "GCP-BETA测试跟踪", "资源类型": "DLMS-BETA版本功能调整", "资源名称": "袁琮欣", "资源开始时间": "2026-08-30", "资源结束时间": "2026-10-08", "资源剩余天数": 77, "日平均工时": 0.5, "已归档": false}, {"id": 63, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "姚金星", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 64, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 65, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "魏殷浩", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 66, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "张国庆", "资源开始时间": "46213", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 67, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID维护", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26825, "日平均工时": 1, "已归档": false}, {"id": 68, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID规则学习", "资源名称": "姚金星", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 18, "日平均工时": 2, "已归档": false}, {"id": 69, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID规则学习", "资源名称": "舒杰", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 18, "日平均工时": 2, "已归档": false}, {"id": 70, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "HFP-代码架构学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 18, "日平均工时": 1, "已归档": false}, {"id": 71, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "HFP-代码架构学习", "资源名称": "张国庆", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 18, "日平均工时": 1, "已归档": false}, {"id": 72, "部门": "日常工作", "项目": "升级工具制作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "", "资源名称": "魏殷浩", "资源开始时间": "2026-08-01", "资源结束时间": "2026-08-31", "资源剩余天数": 39, "日平均工时": 6, "已归档": false}, {"id": 87, "部门": "测试", "项目": "TEST WEB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "新增", "资源类型": "项目经理", "资源名称": "张丹", "资源开始时间": "2026-07-21", "资源结束时间": "2026-07-21", "资源剩余天数": null, "日平均工时": 8, "已归档": true}, {"id": 90, "部门": "测试", "项目": "TEST WEB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "新增", "资源类型": "项目CHAT", "资源名称": "项家祺", "资源开始时间": "2026-07-21", "资源结束时间": "2026-07-22", "资源剩余天数": null, "日平均工时": 8, "已归档": false}], "delayedProjects": [{"id": 32, "部门": "欧洲", "项目": "WMBUS-OMS", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4-设计开发阶段", "资源类型": "固件工程师", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-08", "资源剩余天数": -15, "日平均工时": 6, "已归档": false}, {"id": 52, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -13, "日平均工时": 6, "已归档": false}, {"id": 54, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "硬件工程师-压力功能性能测试", "资源名称": "姚金星", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -13, "日平均工时": 4, "已归档": false}, {"id": 7, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-L660测试/BC680", "资源名称": "袁琮欣", "资源开始时间": "2026-07-15", "资源结束时间": "2026-07-18", "资源剩余天数": -5, "日平均工时": 0.5, "已归档": false}, {"id": 26, "部门": "拉美", "项目": "秘鲁-CAT1", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 6, "已归档": false}, {"id": 31, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 0.8, "已归档": false}, {"id": 50, "部门": "亚洲", "项目": "印尼 BLE表", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "危才文", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 4, "已归档": false}, {"id": 63, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "姚金星", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 64, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 65, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "魏殷浩", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 66, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "张国庆", "资源开始时间": "46213", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 13, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发", "资源名称": "朱葵阳", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -1, "日平均工时": 8, "已归档": false}, {"id": 28, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-测试", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -1, "日平均工时": 4, "已归档": false}, {"id": 47, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "毛文豪", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -1, "日平均工时": 8, "已归档": false}, {"id": 25, "部门": "拉美", "项目": "智利-NB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "特殊-联调阶段\n7月2日-系统IP申请问题，未完成联调\n7月8日-预约二次联调", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-24", "资源剩余天数": 1, "日平均工时": 3, "已归档": false}, {"id": 24, "部门": "巴西经营中心", "项目": "巴西LoRa-Walkby方案", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TAG26帧修改", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-07-25", "资源剩余天数": 2, "日平均工时": 2, "已归档": false}, {"id": 48, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "毛文豪", "资源开始时间": "2026-07-22", "资源结束时间": "2026-07-25", "资源剩余天数": 2, "日平均工时": 7, "已归档": false}], "depts": {"巴西经营中心": [{"id": 3, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-10-23", "资源剩余天数": 92, "日平均工时": 1, "已归档": false}, {"id": 4, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "固件设计文档", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 7, "日平均工时": 4, "已归档": false}, {"id": 5, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "袁琮欣", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-23", "资源剩余天数": 62, "日平均工时": 8, "已归档": false}, {"id": 6, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "李昊龙", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-23", "资源剩余天数": 62, "日平均工时": 8, "已归档": false}, {"id": 7, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-L660测试/BC680", "资源名称": "袁琮欣", "资源开始时间": "2026-07-15", "资源结束时间": "2026-07-18", "资源剩余天数": -5, "日平均工时": 0.5, "已归档": false}, {"id": 8, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 92, "项目描述": "TR4A-测试阶段", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26825, "日平均工时": 1, "已归档": false}, {"id": 9, "部门": "巴西经营中心", "项目": "巴西NB-V3.1预研", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-三轴传感器预研", "资源名称": "张国庆", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-03", "资源剩余天数": 11, "日平均工时": 4, "已归档": false}, {"id": 10, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-10-23", "资源剩余天数": 92, "日平均工时": 1, "已归档": false}, {"id": 11, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 12, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 7, "日平均工时": 4, "已归档": false}, {"id": 13, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发", "资源名称": "朱葵阳", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -1, "日平均工时": 8, "已归档": false}, {"id": 14, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-认证跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-07-22", "资源结束时间": "2026-09-23", "资源剩余天数": 62, "日平均工时": 1.5, "已归档": false}, {"id": 15, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 0, "已归档": false}, {"id": 16, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26825, "日平均工时": 0.5, "已归档": false}, {"id": 17, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 7, "日平均工时": 4, "已归档": false}, {"id": 18, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-调试样机", "资源名称": "毛文豪", "资源开始时间": "2026-07-02", "资源结束时间": "2026-07-27", "资源剩余天数": 4, "日平均工时": 8, "已归档": false}, {"id": 19, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发设计", "资源名称": "朱葵阳", "资源开始时间": "2026-07-17", "资源结束时间": "2026-08-13", "资源剩余天数": 21, "日平均工时": 6, "已归档": false}, {"id": 20, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发设计", "资源名称": "毛文豪", "资源开始时间": "2026-07-27", "资源结束时间": "2026-08-15", "资源剩余天数": 23, "日平均工时": 6, "已归档": false}, {"id": 21, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 22, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-08-15", "资源结束时间": "2026-10-05", "资源剩余天数": 74, "日平均工时": 2, "已归档": false}, {"id": 23, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-认证跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-10-05", "资源结束时间": "2026-12-04", "资源剩余天数": 134, "日平均工时": 1, "已归档": false}, {"id": 24, "部门": "巴西经营中心", "项目": "巴西LoRa-Walkby方案", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TAG26帧修改", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-07-25", "资源剩余天数": 2, "日平均工时": 2, "已归档": false}], "拉美": [{"id": 25, "部门": "拉美", "项目": "智利-NB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "特殊-联调阶段\n7月2日-系统IP申请问题，未完成联调\n7月8日-预约二次联调", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-24", "资源剩余天数": 1, "日平均工时": 3, "已归档": false}, {"id": 26, "部门": "拉美", "项目": "秘鲁-CAT1", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 6, "已归档": false}, {"id": 27, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "项目经理", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-10", "资源剩余天数": 49, "日平均工时": 0.5, "已归档": false}, {"id": 28, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-测试", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -1, "日平均工时": 4, "已归档": false}, {"id": 29, "部门": "拉美", "项目": "多米尼加-补货", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "补充验证", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-31", "资源剩余天数": 8, "日平均工时": 6, "已归档": false}, {"id": 30, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-27", "资源结束时间": "2026-08-05", "资源剩余天数": 13, "日平均工时": 1, "已归档": false}, {"id": 31, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 0.8, "已归档": false}], "欧洲": [{"id": 32, "部门": "欧洲", "项目": "WMBUS-OMS", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4-设计开发阶段", "资源类型": "固件工程师", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-08", "资源剩余天数": -15, "日平均工时": 6, "已归档": false}, {"id": 35, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-30", "资源剩余天数": 69, "日平均工时": 0.5, "已归档": false}, {"id": 36, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件设计-硬件设计文档", "资源名称": "童景顺", "资源开始时间": "2026-07-18", "资源结束时间": "2026-08-06", "资源剩余天数": 14, "日平均工时": 2, "已归档": false}, {"id": 37, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB设计", "资源名称": "童景顺", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-11", "资源剩余天数": 19, "日平均工时": 7, "已归档": false}, {"id": 38, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件概要设计", "资源名称": "项家祺", "资源开始时间": "2026-07-18", "资源结束时间": "2026-08-07", "资源剩余天数": 15, "日平均工时": 2, "已归档": false}, {"id": 39, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件开发-乌拉圭版本移植", "资源名称": "李昊龙", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-30", "资源剩余天数": 38, "日平均工时": 1, "已归档": false}, {"id": 40, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件开发-乌拉圭版本移植", "资源名称": "袁琮欣", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-30", "资源剩余天数": 38, "日平均工时": 1, "已归档": false}, {"id": 41, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件内测", "资源名称": "张国庆", "资源开始时间": "2026-09-11", "资源结束时间": "2026-09-14", "资源剩余天数": 53, "日平均工时": 8, "已归档": false}, {"id": 42, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-内容修复", "资源名称": "袁琮欣", "资源开始时间": "2026-09-13", "资源结束时间": "2026-09-13", "资源剩余天数": 52, "日平均工时": 8, "已归档": false}, {"id": 43, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "袁琮欣", "资源开始时间": "2026-09-14", "资源结束时间": "2026-10-16", "资源剩余天数": 85, "日平均工时": 1, "已归档": false}, {"id": 44, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "李昊龙", "资源开始时间": "2026-09-14", "资源结束时间": "2026-10-16", "资源剩余天数": 85, "日平均工时": 1.5, "已归档": false}, {"id": 45, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "乌拉圭投标样机", "资源名称": "童景顺", "资源开始时间": "2026-09-30", "资源结束时间": "2026-09-30", "资源剩余天数": 69, "日平均工时": 0, "已归档": false}], "亚洲": [{"id": 46, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-08-24", "资源剩余天数": 32, "日平均工时": 0.5, "已归档": false}, {"id": 47, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "毛文豪", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -1, "日平均工时": 8, "已归档": false}, {"id": 48, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "毛文豪", "资源开始时间": "2026-07-22", "资源结束时间": "2026-07-25", "资源剩余天数": 2, "日平均工时": 7, "已归档": false}, {"id": 49, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "毛文豪", "资源开始时间": "2026-07-25", "资源结束时间": "2026-08-09", "资源剩余天数": 17, "日平均工时": 2, "已归档": false}, {"id": 50, "部门": "亚洲", "项目": "印尼 BLE表", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "危才文", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 4, "已归档": false}], "中东": [{"id": 51, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "硬件工程师", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 2, "已归档": false}, {"id": 52, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -13, "日平均工时": 6, "已归档": false}, {"id": 53, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器驱动开发", "资源名称": "魏殷浩", "资源开始时间": "2026-07-20", "资源结束时间": "2026-07-31", "资源剩余天数": 8, "日平均工时": 7, "已归档": false}, {"id": 54, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26825, "项目描述": "预研阶段", "资源类型": "硬件工程师-压力功能性能测试", "资源名称": "姚金星", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -13, "日平均工时": 4, "已归档": false}], "产品降本": [{"id": 55, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-开发", "资源名称": "危才文", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-04", "资源剩余天数": 12, "日平均工时": 6, "已归档": false}, {"id": 56, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-回归测试", "资源名称": "危才文", "资源开始时间": "2026-08-05", "资源结束时间": "2026-08-15", "资源剩余天数": 23, "日平均工时": 2, "已归档": false}, {"id": 57, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-集成测试配合", "资源名称": "危才文", "资源开始时间": "2026-08-16", "资源结束时间": "2026-09-15", "资源剩余天数": 54, "日平均工时": 1, "已归档": false}, {"id": 58, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-lay out", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 59, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-天线破独测试（LoRa+LoRaWAN）", "资源名称": "姚金星", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 60, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-天线破独测试（LoRa+LoRaWAN）", "资源名称": "舒杰", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 0, "已归档": false}], "产品竞争力提升": [{"id": 61, "部门": "产品竞争力提升", "项目": "DLMS -GCP", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "GCP-BETA测试跟踪", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "2026-08-30", "资源结束时间": "2026-10-08", "资源剩余天数": 77, "日平均工时": 0.5, "已归档": false}, {"id": 62, "部门": "产品竞争力提升", "项目": "DLMS -GCP", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "GCP-BETA测试跟踪", "资源类型": "DLMS-BETA版本功能调整", "资源名称": "袁琮欣", "资源开始时间": "2026-08-30", "资源结束时间": "2026-10-08", "资源剩余天数": 77, "日平均工时": 0.5, "已归档": false}], "人员梯队建设": [{"id": 63, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "姚金星", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 64, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 65, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "魏殷浩", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 66, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "张国庆", "资源开始时间": "46213", "资源结束时间": "2026-07-20", "资源剩余天数": -3, "日平均工时": 8, "已归档": false}, {"id": 67, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID维护", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26825, "日平均工时": 1, "已归档": false}, {"id": 68, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID规则学习", "资源名称": "姚金星", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 18, "日平均工时": 2, "已归档": false}, {"id": 69, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID规则学习", "资源名称": "舒杰", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 18, "日平均工时": 2, "已归档": false}, {"id": 70, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "HFP-代码架构学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 18, "日平均工时": 1, "已归档": false}, {"id": 71, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "HFP-代码架构学习", "资源名称": "张国庆", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 18, "日平均工时": 1, "已归档": false}], "日常工作": [{"id": 72, "部门": "日常工作", "项目": "升级工具制作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "", "资源名称": "魏殷浩", "资源开始时间": "2026-08-01", "资源结束时间": "2026-08-31", "资源剩余天数": 39, "日平均工时": 6, "已归档": false}], "测试": [{"id": 90, "部门": "测试", "项目": "TEST WEB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "新增", "资源类型": "项目CHAT", "资源名称": "项家祺", "资源开始时间": "2026-07-21", "资源结束时间": "2026-07-22", "资源剩余天数": null, "日平均工时": 8, "已归档": false}]}, "sourceFile": "超声波户表脚本.xlsx", "sourceMethod": "GitHub源文件(超声波户表脚本.xlsx)", "displaySourceName": "超声波户表脚本.xlsx"};
+const RAW_DATA = {"today": "2026-07-27", "threeDaysLater": "2026-07-30", "stats": {"total": 69, "delayed": 17, "urgent": 4, "warning": 3}, "allProjects": [{"id": 3, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-10-23", "资源剩余天数": 88, "日平均工时": 1, "已归档": false}, {"id": 4, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件设计文档", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 3, "日平均工时": 4, "已归档": false}, {"id": 5, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "袁琮欣", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-23", "资源剩余天数": 58, "日平均工时": 8, "已归档": false}, {"id": 6, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "李昊龙", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-23", "资源剩余天数": 58, "日平均工时": 8, "已归档": false}, {"id": 7, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-L660测试/BC680", "资源名称": "袁琮欣", "资源开始时间": "2026-07-15", "资源结束时间": "2026-07-18", "资源剩余天数": -9, "日平均工时": 0.5, "已归档": false}, {"id": 8, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26821, "日平均工时": 1, "已归档": false}, {"id": 9, "部门": "巴西经营中心", "项目": "巴西NB-V3.1预研", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-三轴传感器预研", "资源名称": "张国庆", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-03", "资源剩余天数": 7, "日平均工时": 4, "已归档": false}, {"id": 10, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-10-23", "资源剩余天数": 88, "日平均工时": 1, "已归档": false}, {"id": 11, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 12, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 3, "日平均工时": 4, "已归档": false}, {"id": 13, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发", "资源名称": "朱葵阳", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -5, "日平均工时": 8, "已归档": false}, {"id": 14, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-认证跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-07-22", "资源结束时间": "2026-09-23", "资源剩余天数": 58, "日平均工时": 1.5, "已归档": false}, {"id": 15, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 0, "已归档": false}, {"id": 16, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26821, "日平均工时": 0.5, "已归档": false}, {"id": 17, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 3, "日平均工时": 4, "已归档": false}, {"id": 18, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-调试样机", "资源名称": "毛文豪", "资源开始时间": "2026-07-02", "资源结束时间": "2026-07-27", "资源剩余天数": 0, "日平均工时": 8, "已归档": false}, {"id": 19, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发设计", "资源名称": "朱葵阳", "资源开始时间": "2026-07-17", "资源结束时间": "2026-08-13", "资源剩余天数": 17, "日平均工时": 6, "已归档": false}, {"id": 20, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发设计", "资源名称": "毛文豪", "资源开始时间": "2026-07-27", "资源结束时间": "2026-08-15", "资源剩余天数": 19, "日平均工时": 6, "已归档": false}, {"id": 21, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 22, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-08-15", "资源结束时间": "2026-10-05", "资源剩余天数": 70, "日平均工时": 2, "已归档": false}, {"id": 23, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-认证跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-10-05", "资源结束时间": "2026-12-04", "资源剩余天数": 130, "日平均工时": 1, "已归档": false}, {"id": 24, "部门": "巴西经营中心", "项目": "巴西LoRa-Walkby方案", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TAG26帧修改", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-07-25", "资源剩余天数": -2, "日平均工时": 2, "已归档": false}, {"id": 25, "部门": "拉美", "项目": "智利-NB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "特殊-联调阶段\n7月2日-系统IP申请问题，未完成联调\n7月8日-预约二次联调", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-24", "资源剩余天数": -3, "日平均工时": 3, "已归档": false}, {"id": 26, "部门": "拉美", "项目": "秘鲁-CAT1", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 6, "已归档": false}, {"id": 27, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "项目经理", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-10", "资源剩余天数": 45, "日平均工时": 0.5, "已归档": false}, {"id": 28, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-测试", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -5, "日平均工时": 4, "已归档": false}, {"id": 29, "部门": "拉美", "项目": "多米尼加-补货", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "补充验证", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-31", "资源剩余天数": 4, "日平均工时": 6, "已归档": false}, {"id": 30, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-27", "资源结束时间": "2026-08-05", "资源剩余天数": 9, "日平均工时": 1, "已归档": false}, {"id": 31, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 0.8, "已归档": false}, {"id": 32, "部门": "欧洲", "项目": "WMBUS-OMS", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4-设计开发阶段", "资源类型": "固件工程师", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-08", "资源剩余天数": -19, "日平均工时": 6, "已归档": false}, {"id": 35, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-30", "资源剩余天数": 65, "日平均工时": 0.5, "已归档": false}, {"id": 36, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件设计-硬件设计文档", "资源名称": "童景顺", "资源开始时间": "2026-07-18", "资源结束时间": "2026-08-06", "资源剩余天数": 10, "日平均工时": 2, "已归档": false}, {"id": 37, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB设计", "资源名称": "童景顺", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-11", "资源剩余天数": 15, "日平均工时": 7, "已归档": false}, {"id": 38, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件概要设计", "资源名称": "项家祺", "资源开始时间": "2026-07-18", "资源结束时间": "2026-08-07", "资源剩余天数": 11, "日平均工时": 2, "已归档": false}, {"id": 39, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件开发-乌拉圭版本移植", "资源名称": "李昊龙", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-30", "资源剩余天数": 34, "日平均工时": 1, "已归档": false}, {"id": 40, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件开发-乌拉圭版本移植", "资源名称": "袁琮欣", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-30", "资源剩余天数": 34, "日平均工时": 1, "已归档": false}, {"id": 41, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件内测", "资源名称": "张国庆", "资源开始时间": "2026-09-11", "资源结束时间": "2026-09-14", "资源剩余天数": 49, "日平均工时": 8, "已归档": false}, {"id": 42, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-内容修复", "资源名称": "袁琮欣", "资源开始时间": "2026-09-13", "资源结束时间": "2026-09-13", "资源剩余天数": 48, "日平均工时": 8, "已归档": false}, {"id": 43, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "袁琮欣", "资源开始时间": "2026-09-14", "资源结束时间": "2026-10-16", "资源剩余天数": 81, "日平均工时": 1, "已归档": false}, {"id": 44, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "李昊龙", "资源开始时间": "2026-09-14", "资源结束时间": "2026-10-16", "资源剩余天数": 81, "日平均工时": 1.5, "已归档": false}, {"id": 45, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "乌拉圭投标样机", "资源名称": "童景顺", "资源开始时间": "2026-09-30", "资源结束时间": "2026-09-30", "资源剩余天数": 65, "日平均工时": 0, "已归档": false}, {"id": 46, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-08-24", "资源剩余天数": 28, "日平均工时": 0.5, "已归档": false}, {"id": 47, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "毛文豪", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -5, "日平均工时": 8, "已归档": false}, {"id": 48, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "毛文豪", "资源开始时间": "2026-07-22", "资源结束时间": "2026-07-25", "资源剩余天数": -2, "日平均工时": 7, "已归档": false}, {"id": 49, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "毛文豪", "资源开始时间": "2026-07-25", "资源结束时间": "2026-08-09", "资源剩余天数": 13, "日平均工时": 2, "已归档": false}, {"id": 50, "部门": "亚洲", "项目": "印尼 BLE表", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "危才文", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 4, "已归档": false}, {"id": 51, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "硬件工程师", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 2, "已归档": false}, {"id": 52, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -17, "日平均工时": 6, "已归档": false}, {"id": 53, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器驱动开发", "资源名称": "魏殷浩", "资源开始时间": "2026-07-20", "资源结束时间": "2026-07-31", "资源剩余天数": 4, "日平均工时": 7, "已归档": false}, {"id": 54, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "硬件工程师-压力功能性能测试", "资源名称": "姚金星", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -17, "日平均工时": 4, "已归档": false}, {"id": 55, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-开发", "资源名称": "危才文", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-04", "资源剩余天数": 8, "日平均工时": 6, "已归档": false}, {"id": 56, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-回归测试", "资源名称": "危才文", "资源开始时间": "2026-08-05", "资源结束时间": "2026-08-15", "资源剩余天数": 19, "日平均工时": 2, "已归档": false}, {"id": 57, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-集成测试配合", "资源名称": "危才文", "资源开始时间": "2026-08-16", "资源结束时间": "2026-09-15", "资源剩余天数": 50, "日平均工时": 1, "已归档": false}, {"id": 58, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-lay out", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 59, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-天线破独测试（LoRa+LoRaWAN）", "资源名称": "姚金星", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 60, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-天线破独测试（LoRa+LoRaWAN）", "资源名称": "舒杰", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 0, "已归档": false}, {"id": 61, "部门": "产品竞争力提升", "项目": "DLMS -GCP", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "GCP-BETA测试跟踪", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "2026-08-30", "资源结束时间": "2026-10-08", "资源剩余天数": 73, "日平均工时": 0.5, "已归档": false}, {"id": 62, "部门": "产品竞争力提升", "项目": "DLMS -GCP", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "GCP-BETA测试跟踪", "资源类型": "DLMS-BETA版本功能调整", "资源名称": "袁琮欣", "资源开始时间": "2026-08-30", "资源结束时间": "2026-10-08", "资源剩余天数": 73, "日平均工时": 0.5, "已归档": false}, {"id": 63, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "姚金星", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 64, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 65, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "魏殷浩", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 66, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "张国庆", "资源开始时间": "46213", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 67, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID维护", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26821, "日平均工时": 1, "已归档": false}, {"id": 68, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID规则学习", "资源名称": "姚金星", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 14, "日平均工时": 2, "已归档": false}, {"id": 69, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID规则学习", "资源名称": "舒杰", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 14, "日平均工时": 2, "已归档": false}, {"id": 70, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "HFP-代码架构学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 14, "日平均工时": 1, "已归档": false}, {"id": 71, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "HFP-代码架构学习", "资源名称": "张国庆", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 14, "日平均工时": 1, "已归档": false}, {"id": 72, "部门": "日常工作", "项目": "升级工具制作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "", "资源名称": "魏殷浩", "资源开始时间": "2026-08-01", "资源结束时间": "2026-08-31", "资源剩余天数": 35, "日平均工时": 6, "已归档": false}, {"id": 87, "部门": "测试", "项目": "TEST WEB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "新增", "资源类型": "项目经理", "资源名称": "张丹", "资源开始时间": "2026-07-21", "资源结束时间": "2026-07-21", "资源剩余天数": null, "日平均工时": 8, "已归档": true}, {"id": 90, "部门": "测试", "项目": "TEST WEB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "新增", "资源类型": "项目CHAT", "资源名称": "项家祺", "资源开始时间": "2026-07-21", "资源结束时间": "2026-07-22", "资源剩余天数": null, "日平均工时": 8, "已归档": false}], "delayedProjects": [{"id": 32, "部门": "欧洲", "项目": "WMBUS-OMS", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4-设计开发阶段", "资源类型": "固件工程师", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-08", "资源剩余天数": -19, "日平均工时": 6, "已归档": false}, {"id": 52, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -17, "日平均工时": 6, "已归档": false}, {"id": 54, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "硬件工程师-压力功能性能测试", "资源名称": "姚金星", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -17, "日平均工时": 4, "已归档": false}, {"id": 7, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-L660测试/BC680", "资源名称": "袁琮欣", "资源开始时间": "2026-07-15", "资源结束时间": "2026-07-18", "资源剩余天数": -9, "日平均工时": 0.5, "已归档": false}, {"id": 26, "部门": "拉美", "项目": "秘鲁-CAT1", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 6, "已归档": false}, {"id": 31, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 0.8, "已归档": false}, {"id": 50, "部门": "亚洲", "项目": "印尼 BLE表", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "危才文", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 4, "已归档": false}, {"id": 63, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "姚金星", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 64, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 65, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "魏殷浩", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 66, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "张国庆", "资源开始时间": "46213", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 13, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发", "资源名称": "朱葵阳", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -5, "日平均工时": 8, "已归档": false}, {"id": 28, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-测试", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -5, "日平均工时": 4, "已归档": false}, {"id": 47, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "毛文豪", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -5, "日平均工时": 8, "已归档": false}, {"id": 25, "部门": "拉美", "项目": "智利-NB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "特殊-联调阶段\n7月2日-系统IP申请问题，未完成联调\n7月8日-预约二次联调", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-24", "资源剩余天数": -3, "日平均工时": 3, "已归档": false}, {"id": 24, "部门": "巴西经营中心", "项目": "巴西LoRa-Walkby方案", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TAG26帧修改", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-07-25", "资源剩余天数": -2, "日平均工时": 2, "已归档": false}, {"id": 48, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "毛文豪", "资源开始时间": "2026-07-22", "资源结束时间": "2026-07-25", "资源剩余天数": -2, "日平均工时": 7, "已归档": false}, {"id": 18, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-调试样机", "资源名称": "毛文豪", "资源开始时间": "2026-07-02", "资源结束时间": "2026-07-27", "资源剩余天数": 0, "日平均工时": 8, "已归档": false}, {"id": 4, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件设计文档", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 3, "日平均工时": 4, "已归档": false}, {"id": 12, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 3, "日平均工时": 4, "已归档": false}, {"id": 17, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 3, "日平均工时": 4, "已归档": false}], "depts": {"巴西经营中心": [{"id": 3, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-10-23", "资源剩余天数": 88, "日平均工时": 1, "已归档": false}, {"id": 4, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件设计文档", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 3, "日平均工时": 4, "已归档": false}, {"id": 5, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "袁琮欣", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-23", "资源剩余天数": 58, "日平均工时": 8, "已归档": false}, {"id": 6, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "李昊龙", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-23", "资源剩余天数": 58, "日平均工时": 8, "已归档": false}, {"id": 7, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-L660测试/BC680", "资源名称": "袁琮欣", "资源开始时间": "2026-07-15", "资源结束时间": "2026-07-18", "资源剩余天数": -9, "日平均工时": 0.5, "已归档": false}, {"id": 8, "部门": "巴西经营中心", "项目": "巴西NB-V3", "项目开始时间": "1900-01-01", "项目结束时间": "2026-10-23", "项目剩余天数": 88, "项目描述": "TR4A-测试阶段", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26821, "日平均工时": 1, "已归档": false}, {"id": 9, "部门": "巴西经营中心", "项目": "巴西NB-V3.1预研", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-三轴传感器预研", "资源名称": "张国庆", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-03", "资源剩余天数": 7, "日平均工时": 4, "已归档": false}, {"id": 10, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-10-23", "资源剩余天数": 88, "日平均工时": 1, "已归档": false}, {"id": 11, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 12, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 3, "日平均工时": 4, "已归档": false}, {"id": 13, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发", "资源名称": "朱葵阳", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -5, "日平均工时": 8, "已归档": false}, {"id": 14, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-认证跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-07-22", "资源结束时间": "2026-09-23", "资源剩余天数": 58, "日平均工时": 1.5, "已归档": false}, {"id": 15, "部门": "巴西经营中心", "项目": "巴西脉冲-V3", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 0, "已归档": false}, {"id": 16, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26821, "日平均工时": 0.5, "已归档": false}, {"id": 17, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "项家祺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-30", "资源剩余天数": 3, "日平均工时": 4, "已归档": false}, {"id": 18, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-调试样机", "资源名称": "毛文豪", "资源开始时间": "2026-07-02", "资源结束时间": "2026-07-27", "资源剩余天数": 0, "日平均工时": 8, "已归档": false}, {"id": 19, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发设计", "资源名称": "朱葵阳", "资源开始时间": "2026-07-17", "资源结束时间": "2026-08-13", "资源剩余天数": 17, "日平均工时": 6, "已归档": false}, {"id": 20, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-开发设计", "资源名称": "毛文豪", "资源开始时间": "2026-07-27", "资源结束时间": "2026-08-15", "资源剩余天数": 19, "日平均工时": 6, "已归档": false}, {"id": 21, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB调整", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 22, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-08-15", "资源结束时间": "2026-10-05", "资源剩余天数": 70, "日平均工时": 2, "已归档": false}, {"id": 23, "部门": "巴西经营中心", "项目": "巴西WMBUS-walkby", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-认证跟踪", "资源名称": "朱葵阳", "资源开始时间": "2026-10-05", "资源结束时间": "2026-12-04", "资源剩余天数": 130, "日平均工时": 1, "已归档": false}, {"id": 24, "部门": "巴西经营中心", "项目": "巴西LoRa-Walkby方案", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TAG26帧修改", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-07-25", "资源剩余天数": -2, "日平均工时": 2, "已归档": false}], "拉美": [{"id": 25, "部门": "拉美", "项目": "智利-NB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "特殊-联调阶段\n7月2日-系统IP申请问题，未完成联调\n7月8日-预约二次联调", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-24", "资源剩余天数": -3, "日平均工时": 3, "已归档": false}, {"id": 26, "部门": "拉美", "项目": "秘鲁-CAT1", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师", "资源名称": "答金雨", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 6, "已归档": false}, {"id": 27, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "项目经理", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-10", "资源剩余天数": 45, "日平均工时": 0.5, "已归档": false}, {"id": 28, "部门": "拉美", "项目": "墨西哥MIAA", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4A-测试阶段", "资源类型": "固件工程师-测试", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -5, "日平均工时": 4, "已归档": false}, {"id": 29, "部门": "拉美", "项目": "多米尼加-补货", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "补充验证", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-31", "资源剩余天数": 4, "日平均工时": 6, "已归档": false}, {"id": 30, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-27", "资源结束时间": "2026-08-05", "资源剩余天数": 9, "日平均工时": 1, "已归档": false}, {"id": 31, "部门": "拉美", "项目": "哥伦比亚相关", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "哥伦比亚EVB项目复测", "资源类型": "固件工程师", "资源名称": "毛文豪", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 0.8, "已归档": false}], "欧洲": [{"id": 32, "部门": "欧洲", "项目": "WMBUS-OMS", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "TR4-设计开发阶段", "资源类型": "固件工程师", "资源名称": "危才文", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-08", "资源剩余天数": -19, "日平均工时": 6, "已归档": false}, {"id": 35, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2026-09-30", "资源剩余天数": 65, "日平均工时": 0.5, "已归档": false}, {"id": 36, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件设计-硬件设计文档", "资源名称": "童景顺", "资源开始时间": "2026-07-18", "资源结束时间": "2026-08-06", "资源剩余天数": 10, "日平均工时": 2, "已归档": false}, {"id": 37, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-PCB设计", "资源名称": "童景顺", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-11", "资源剩余天数": 15, "日平均工时": 7, "已归档": false}, {"id": 38, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件概要设计", "资源名称": "项家祺", "资源开始时间": "2026-07-18", "资源结束时间": "2026-08-07", "资源剩余天数": 11, "日平均工时": 2, "已归档": false}, {"id": 39, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件开发-乌拉圭版本移植", "资源名称": "李昊龙", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-30", "资源剩余天数": 34, "日平均工时": 1, "已归档": false}, {"id": 40, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件开发-乌拉圭版本移植", "资源名称": "袁琮欣", "资源开始时间": "2026-08-08", "资源结束时间": "2026-08-30", "资源剩余天数": 34, "日平均工时": 1, "已归档": false}, {"id": 41, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件内测", "资源名称": "张国庆", "资源开始时间": "2026-09-11", "资源结束时间": "2026-09-14", "资源剩余天数": 49, "日平均工时": 8, "已归档": false}, {"id": 42, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-内容修复", "资源名称": "袁琮欣", "资源开始时间": "2026-09-13", "资源结束时间": "2026-09-13", "资源剩余天数": 48, "日平均工时": 8, "已归档": false}, {"id": 43, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "袁琮欣", "资源开始时间": "2026-09-14", "资源结束时间": "2026-10-16", "资源剩余天数": 81, "日平均工时": 1, "已归档": false}, {"id": 44, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "李昊龙", "资源开始时间": "2026-09-14", "资源结束时间": "2026-10-16", "资源剩余天数": 81, "日平均工时": 1.5, "已归档": false}, {"id": 45, "部门": "欧洲", "项目": "欧洲短款1代产品", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "乌拉圭投标样机", "资源名称": "童景顺", "资源开始时间": "2026-09-30", "资源结束时间": "2026-09-30", "资源剩余天数": 65, "日平均工时": 0, "已归档": false}], "亚洲": [{"id": 46, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "项目经理", "资源名称": "答金雨", "资源开始时间": "2026-07-03", "资源结束时间": "2026-08-24", "资源剩余天数": 28, "日平均工时": 0.5, "已归档": false}, {"id": 47, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "SE设计", "资源名称": "毛文豪", "资源开始时间": "1900-01-01", "资源结束时间": "2026-07-22", "资源剩余天数": -5, "日平均工时": 8, "已归档": false}, {"id": 48, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "毛文豪", "资源开始时间": "2026-07-22", "资源结束时间": "2026-07-25", "资源剩余天数": -2, "日平均工时": 7, "已归档": false}, {"id": 49, "部门": "亚洲", "项目": "巴勒斯坦-LoRa", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-测试跟踪", "资源名称": "毛文豪", "资源开始时间": "2026-07-25", "资源结束时间": "2026-08-09", "资源剩余天数": 13, "日平均工时": 2, "已归档": false}, {"id": 50, "部门": "亚洲", "项目": "印尼 BLE表", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师-固件开发", "资源名称": "危才文", "资源开始时间": "2026-07-17", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 4, "已归档": false}], "中东": [{"id": 51, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "硬件工程师", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 2, "已归档": false}, {"id": 52, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -17, "日平均工时": 6, "已归档": false}, {"id": 53, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "固件工程师-压力传感器驱动开发", "资源名称": "魏殷浩", "资源开始时间": "2026-07-20", "资源结束时间": "2026-07-31", "资源剩余天数": 4, "日平均工时": 7, "已归档": false}, {"id": 54, "部门": "中东", "项目": "沙特-NB水表", "项目开始时间": "2026-07-03", "项目结束时间": "2100-01-01", "项目剩余天数": 26821, "项目描述": "预研阶段", "资源类型": "硬件工程师-压力功能性能测试", "资源名称": "姚金星", "资源开始时间": "2026-07-07", "资源结束时间": "2026-07-10", "资源剩余天数": -17, "日平均工时": 4, "已归档": false}], "产品降本": [{"id": 55, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-开发", "资源名称": "危才文", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-04", "资源剩余天数": 8, "日平均工时": 6, "已归档": false}, {"id": 56, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-回归测试", "资源名称": "危才文", "资源开始时间": "2026-08-05", "资源结束时间": "2026-08-15", "资源剩余天数": 19, "日平均工时": 2, "已归档": false}, {"id": 57, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "固件工程师-集成测试配合", "资源名称": "危才文", "资源开始时间": "2026-08-16", "资源结束时间": "2026-09-15", "资源剩余天数": 50, "日平均工时": 1, "已归档": false}, {"id": 58, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-lay out", "资源名称": "童景顺", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 59, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-天线破独测试（LoRa+LoRaWAN）", "资源名称": "姚金星", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 7, "已归档": false}, {"id": 60, "部门": "产品降本", "项目": "研究院LoRaWAN", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "LoRaWAN通用产品+兼容lierda", "资源类型": "硬件工程师-天线破独测试（LoRa+LoRaWAN）", "资源名称": "舒杰", "资源开始时间": "", "资源结束时间": "", "资源剩余天数": null, "日平均工时": 0, "已归档": false}], "产品竞争力提升": [{"id": 61, "部门": "产品竞争力提升", "项目": "DLMS -GCP", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "GCP-BETA测试跟踪", "资源类型": "项目经理", "资源名称": "项家祺", "资源开始时间": "2026-08-30", "资源结束时间": "2026-10-08", "资源剩余天数": 73, "日平均工时": 0.5, "已归档": false}, {"id": 62, "部门": "产品竞争力提升", "项目": "DLMS -GCP", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "GCP-BETA测试跟踪", "资源类型": "DLMS-BETA版本功能调整", "资源名称": "袁琮欣", "资源开始时间": "2026-08-30", "资源结束时间": "2026-10-08", "资源剩余天数": 73, "日平均工时": 0.5, "已归档": false}], "人员梯队建设": [{"id": 63, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "姚金星", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 64, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师", "资源名称": "舒杰", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 65, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "魏殷浩", "资源开始时间": "2026-07-10", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 66, "部门": "人员梯队建设", "项目": "应届生实习", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "固件工程师", "资源名称": "张国庆", "资源开始时间": "46213", "资源结束时间": "2026-07-20", "资源剩余天数": -7, "日平均工时": 8, "已归档": false}, {"id": 67, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID维护", "资源名称": "童景顺", "资源开始时间": "1900-01-01", "资源结束时间": "2100-01-01", "资源剩余天数": 26821, "日平均工时": 1, "已归档": false}, {"id": 68, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID规则学习", "资源名称": "姚金星", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 14, "日平均工时": 2, "已归档": false}, {"id": 69, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "硬件工程师-Bom、产品ID规则学习", "资源名称": "舒杰", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 14, "日平均工时": 2, "已归档": false}, {"id": 70, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "HFP-代码架构学习", "资源名称": "魏殷浩", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 14, "日平均工时": 1, "已归档": false}, {"id": 71, "部门": "人员梯队建设", "项目": "日常工作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "HFP-代码架构学习", "资源名称": "张国庆", "资源开始时间": "2026-07-20", "资源结束时间": "2026-08-10", "资源剩余天数": 14, "日平均工时": 1, "已归档": false}], "日常工作": [{"id": 72, "部门": "日常工作", "项目": "升级工具制作", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "", "资源类型": "", "资源名称": "魏殷浩", "资源开始时间": "2026-08-01", "资源结束时间": "2026-08-31", "资源剩余天数": 35, "日平均工时": 6, "已归档": false}], "测试": [{"id": 90, "部门": "测试", "项目": "TEST WEB", "项目开始时间": "", "项目结束时间": "", "项目剩余天数": null, "项目描述": "新增", "资源类型": "项目CHAT", "资源名称": "项家祺", "资源开始时间": "2026-07-21", "资源结束时间": "2026-07-22", "资源剩余天数": null, "日平均工时": 8, "已归档": false}]}, "sourceFile": "超声波户表脚本.xlsx", "sourceMethod": "GitHub源文件(超声波户表脚本.xlsx)", "displaySourceName": "超声波户表脚本.xlsx"};
 
 let currentTab = 'all';
 let editMode = false;
@@ -1290,6 +1718,9 @@ function init() {
     collabLoadData().then(() => {
       updateStats();
       renderTable();
+      updatePermissionUI();
+      // 每30秒刷新审批数量
+      setInterval(updateApprovalBadge, 30000);
       initHoursPanel();
       initResourceSearch();
       initDeptFilter();
@@ -1645,7 +2076,11 @@ function bindEvents() {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       currentTab = tab.dataset.tab;
-      renderTable();
+      if (currentTab === 'requirements') {
+        renderRequirements();
+      } else {
+        renderTable();
+      }
     });
   });
 }
@@ -1878,9 +2313,9 @@ function renderBoardView(data, container) {
           html += '<td><span class="status-tag ' + status.class + '" style="font-size:11px">' + status.icon + ' ' + status.label + '</span></td>';
           html += '<td class="note-cell"><div class="editable ' + (noteText ? '' : 'note-text') + '" contenteditable="true" onblur="saveNote(' + r.id + ', this.innerText)" onfocus="if(this.innerText===\'点击添加备注...\'){this.innerText=\'\';this.classList.remove(\'note-text\')}" data-id="' + r.id + '">' + (noteText || '点击添加备注...') + '</div></td>';
           if (archived[r.id]) {
-            html += '<td><button class="archive-btn restore" onclick="restoreProject(' + r.id + ')">↩️ 恢复</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(' + r.id + ')">🗑️ 删除</button></td>';
+            html += '<td><button class="archive-btn restore" onclick="restoreProject(' + r.id + ')">↩️ 恢复</button> <button class="archive-btn" style="background:#3b82f6" onclick="editProject(' + r.id + ')">✏️ 编辑</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(' + r.id + ')">🗑️ 删除</button></td>';
           } else {
-            html += '<td><button class="archive-btn" onclick="archiveProject(' + r.id + ')">📦 归档</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(' + r.id + ')">🗑️ 删除</button></td>';
+            html += '<td><button class="archive-btn" onclick="archiveProject(' + r.id + ')">📦 归档</button> <button class="archive-btn" style="background:#3b82f6" onclick="editProject(' + r.id + ')">✏️ 编辑</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(' + r.id + ')">🗑️ 删除</button></td>';
           }
           html += '</tr>';
         });
@@ -2945,9 +3380,9 @@ function renderTable() {
               onfocus="if(this.innerText==='点击添加备注...'){this.innerText='';this.classList.remove('note-text')}"
               data-id="${p.id}">${noteText || '点击添加备注...'}</div></td>`;
     if (isProjectArchived(p)) {
-      html += `<td><button class="archive-btn restore" onclick="restoreProject(${p.id})">↩️ 恢复</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(${p.id})">🗑️ 删除</button></td>`;
+      html += `<td><button class="archive-btn restore" onclick="restoreProject(${p.id})">↩️ 恢复</button> <button class="archive-btn" style="background:#3b82f6" onclick="editProject(${p.id})">✏️ 编辑</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(${p.id})">🗑️ 删除</button></td>`;
     } else {
-      html += `<td><button class="archive-btn" onclick="archiveProject(${p.id})">📦 归档</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(${p.id})">🗑️ 删除</button></td>`;
+      html += `<td><button class="archive-btn" onclick="archiveProject(${p.id})">📦 归档</button> <button class="archive-btn" style="background:#3b82f6" onclick="editProject(${p.id})">✏️ 编辑</button> <button class="archive-btn" style="background:#ef4444" onclick="deleteProject(${p.id})">🗑️ 删除</button></td>`;
     }
     html += '</tr>';
   });
@@ -3028,6 +3463,131 @@ function saveNote(id, text) {
   }
   localStorage.setItem('projectNotes', JSON.stringify(notes));
   showSaved();
+}
+
+// ==================== 编辑项目功能 ====================
+async function editProject(id) {
+  // 【关键修复】先从服务器获取最新数据，避免使用过时的缓存
+  let p = RAW_DATA.allProjects.find(x => x.id === id);
+  if (!p) { alert('项目不存在'); return; }
+  
+  // 协作模式下：从服务器获取最新数据
+  if (collabIsEnabled()) {
+    try {
+      const resp = await fetch('/api/projects');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.allProjects) {
+          RAW_DATA.allProjects = data.allProjects;
+          p = RAW_DATA.allProjects.find(x => x.id === id);
+          if (!p) { alert('项目不存在'); return; }
+        }
+      }
+    } catch(e) {
+      console.warn('[编辑] 获取最新数据失败，使用缓存:', e);
+    }
+  }
+
+  // 获取实际值（考虑 localEdits）
+  const actual = getProject(p);
+  const beforeData = {
+    '部门': actual.部门 || actual['部门'] || '',
+    '项目': actual.项目 || actual['项目'] || actual['项目名称'] || '',
+    '项目描述': actual.项目描述 || actual['项目描述'] || '',
+    '资源类型': actual.资源类型 || '',
+    '资源名称': actual.资源名称 || '',
+    '资源开始时间': actual.资源开始时间 || '',
+    '资源结束时间': actual.资源结束时间 || '',
+    '日平均工时': actual.日平均工时 || 0
+  };
+
+  const isViewer = needsApproval();
+  const title = isViewer ? '📝 申请编辑项目' : '✏️ 编辑项目';
+  const projectName = p.项目 || '未知项目';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:500px">
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      <h3>${title}</h3>
+      <p style="color:#6b7280;margin:0 0 16px 0;font-size:13px">项目：<strong>${projectName}</strong></p>
+      <div class="form-group">
+        <label>负责人</label>
+        <input type="text" id="editField_name" value="${beforeData['资源名称'] || ''}" placeholder="请输入负责人姓名">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>开始时间</label>
+          <input type="date" id="editField_start" value="${beforeData['资源开始时间'] || ''}">
+        </div>
+        <div class="form-group">
+          <label>结束时间</label>
+          <input type="date" id="editField_end" value="${beforeData['资源结束时间'] || ''}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>资源类型</label>
+          <input type="text" id="editField_type" value="${beforeData['资源类型'] || ''}" placeholder="如：开发、测试、设计">
+        </div>
+        <div class="form-group">
+          <label>日平均工时</label>
+          <input type="number" id="editField_hours" value="${beforeData['日平均工时'] || 0}" min="0" max="24" step="0.5">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+        <button class="btn" style="background:#e5e7eb;color:#374151" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        <button class="btn" style="background:#3b82f6" id="editSaveBtn">${isViewer ? '提交审批' : '保存修改'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('#editSaveBtn').onclick = async function() {
+    const afterData = {
+      '部门': beforeData['部门'] || '',
+      '项目': beforeData['项目'] || '',
+      '项目描述': beforeData['项目描述'] || '',
+      '资源类型': document.getElementById('editField_type').value.trim(),
+      '资源名称': document.getElementById('editField_name').value.trim(),
+      '资源开始时间': document.getElementById('editField_start').value,
+      '资源结束时间': document.getElementById('editField_end').value,
+      '日平均工时': parseFloat(document.getElementById('editField_hours').value) || 0
+    };
+
+    // 校验：结束时间不能早于开始时间
+    if (afterData['资源开始时间'] && afterData['资源结束时间'] && afterData['资源开始时间'] > afterData['资源结束时间']) {
+      alert('❌ 结束时间不能早于开始时间');
+      return;
+    }
+
+    if (isViewer) {
+      // viewer：提交审批（传入项目名，避免查找失败）
+      await submitApproval('edit', [id], beforeData, afterData, [projectName]);
+    } else {
+      // editor/admin：直接保存
+      const editData = {};
+      for (const key in afterData) {
+        if (afterData[key] !== beforeData[key]) {
+          editData[key] = afterData[key];
+        }
+      }
+      if (Object.keys(editData).length === 0) {
+        alert('没有修改内容');
+        modal.remove();
+        return;
+      }
+      const result = await callActionApi('edit', { id: id, fields: editData });
+      if (result && result.success) {
+        updateStats();
+        renderTable();
+        initResourceSearch();
+        showSaved();
+      }
+    }
+    modal.remove();
+  };
 }
 
 // ==================== 简化方案：统一的API调用函数 ====================
@@ -3164,6 +3724,12 @@ async function batchArchive() {
   }
   if (!confirm(`确定要批量归档选中的 ${ids.length} 个项目吗？`)) return;
   
+  // viewer需要走审批
+  if (needsApproval()) {
+    await submitApproval('batch_archive', ids);
+    return;
+  }
+  
   let done = 0;
   if (collabIsEnabled()) {
     const r = await callActionApi('batch-archive', { ids: ids });
@@ -3199,6 +3765,12 @@ async function batchRestore() {
   }
   if (!confirm(`确定要批量恢复选中的 ${ids.length} 个已归档项目吗？`)) return;
   
+  // viewer需要走审批
+  if (needsApproval()) {
+    await submitApproval('batch_unarchive', ids);
+    return;
+  }
+  
   let done = 0;
   if (collabIsEnabled()) {
     const r = await callActionApi('batch-unarchive', { ids: ids });
@@ -3224,6 +3796,11 @@ async function batchRestore() {
 
 // 批量删除（一次调用后端批量接口）
 async function batchDelete() {
+  // 仅admin可删除
+  if (!canDelete()) {
+    alert('❌ 权限不足，仅管理员可删除项目');
+    return;
+  }
   const ids = Object.keys(checked).map(Number).filter(id => {
     return RAW_DATA.allProjects.find(x => x.id === id);
   });
@@ -3278,6 +3855,11 @@ async function archiveProject(id) {
   const name = p ? p.项目 : '此项目';
   if (confirm(`确定要归档「${name}」吗？
 归档后将不在点检列表中显示，可在「已归档」标签页恢复。`)) {
+    // 权限检查
+    if (needsApproval()) {
+      await submitApproval('archive', [id]);
+      return;
+    }
     if (collabIsEnabled()) {
       const result = await callActionApi('archive', { id: id });
       if (result && result.success) {
@@ -3303,6 +3885,14 @@ async function archiveProject(id) {
 
 // 【简化方案】恢复归档：直接调用API
 async function restoreProject(id) {
+  // 权限检查
+  if (needsApproval()) {
+    const p = RAW_DATA.allProjects.find(x => x.id === id);
+    const name = p ? p.项目 : '此项目';
+    if (!confirm(`确定要申请恢复「${name}」吗？`)) return;
+    await submitApproval('unarchive', [id]);
+    return;
+  }
   if (collabIsEnabled()) {
     const result = await callActionApi('unarchive', { id: id });
     if (result && result.success) {
@@ -3325,6 +3915,11 @@ async function restoreProject(id) {
 
 // 【简化方案】删除项目：直接调用API
 async function deleteProject(id) {
+  // 仅admin可删除
+  if (!canDelete()) {
+    alert('❌ 权限不足，仅管理员可删除项目');
+    return;
+  }
   const p = RAW_DATA.allProjects.find(x => x.id === id);
   const name = p ? p.项目 : '此项目';
   const dept = p ? p.部门 : '';
@@ -4763,15 +5358,28 @@ async function submitImport() {
     const result = await resp.json();
     
     if (result.success) {
-      // 刷新数据
-      await refreshRawData();
-      updateStats();
-      renderTable();
-      initResourceSearch();
-      showSaved();
-      const overlay = document.querySelector('.modal-overlay');
-      if (overlay) overlay.remove();
-      alert(`✅ 成功导入 ${result.count || finalRows.length} 条数据`);
+      if (window._requirementAcceptCtx) {
+        const names = [...new Set(finalRows.map(r => r['项目']).filter(Boolean))];
+        window._requirementAcceptCtx.projectNames.push(...names);
+        updateAcceptProjectList();
+        importParsedData = [];
+        document.getElementById('importPreviewArea').style.display = 'none';
+        document.getElementById('importDeptRow').style.display = 'none';
+        document.getElementById('importWarnings').style.display = 'none';
+        var textArea = document.getElementById('importTextArea');
+        if (textArea) textArea.value = '';
+        alert('已导入 ' + names.length + ' 个项目，可继续添加');
+      } else {
+        // 刷新数据
+        await refreshRawData();
+        updateStats();
+        renderTable();
+        initResourceSearch();
+        showSaved();
+        const overlay = document.querySelector('.modal-overlay');
+        if (overlay) overlay.remove();
+        alert(`✅ 成功导入 ${result.count || finalRows.length} 条数据`);
+      }
     } else {
       alert('❌ 导入失败：' + (result.message || '未知错误'));
     }
@@ -4975,12 +5583,29 @@ async function submitNewProject() {
       // 【简化方案】协作模式：直接调用API
       const result = await callActionApi('add', newProject);
       if (result && result.success) {
-        updateStats();
-        renderTable();
-        initResourceSearch();
-        showSaved();
-        document.querySelector('.modal-overlay').remove();
-        alert(`✅ 已添加新项目：${projName} - ${resType}（${resPerson}）`);
+        if (window._requirementAcceptCtx) {
+          window._requirementAcceptCtx.projectNames.push(projName);
+          updateAcceptProjectList();
+          // 清空表单继续添加，不关闭弹窗
+          document.getElementById('newProjName').value = '';
+          document.getElementById('newProjDesc').value = '';
+          document.getElementById('newResType').value = '';
+          document.getElementById('newResPerson').value = '';
+          document.getElementById('newStartDate').value = '';
+          document.getElementById('newEndDate').value = '';
+          alert('已添加项目：' + projName + '，可继续添加');
+        } else {
+          updateStats();
+          renderTable();
+          initResourceSearch();
+          showSaved();
+          document.querySelector('.modal-overlay').remove();
+          if (result.need_approval) {
+            alert(`⏳ 已提交添加项目申请，等待审批：${projName} - ${resType}（${resPerson}）`);
+          } else {
+            alert(`✅ 已添加新项目：${projName} - ${resType}（${resPerson}）`);
+          }
+        }
       } else if (result && !result.success) {
         alert('❌ 添加失败：' + (result.message || '未知错误'));
       }
@@ -5308,6 +5933,582 @@ function importMembersFromFile(event) {
     reader.readAsArrayBuffer(file);
   } else {
     reader.readAsText(file, 'UTF-8');
+  }
+}
+
+// ==================== 需求导入功能 ====================
+
+// 全局变量：受理需求上下文
+window._requirementAcceptCtx = null;
+
+// 需求状态映射
+const REQ_STATUS_MAP = {
+  submitted: { label: '待受理', color: '#f0ad4e', bg: '#fcf8e3' },
+  accepted:  { label: '已受理', color: '#337ab7', bg: '#d9edf7' },
+  archived:  { label: '已归档', color: '#777',    bg: '#f5f5f5' }
+};
+
+// 渲染需求列表
+async function renderRequirements() {
+  const container = document.getElementById('tableContainer');
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:#999">加载中...</div>';
+  try {
+    const resp = await fetch('/api/requirements', {method: 'POST', credentials: 'include'});
+    if (!resp.ok) throw new Error('获取需求列表失败: ' + resp.status);
+    const data = await resp.json();
+    const list = data.requirements || data || [];
+    // 更新 tab 徽标
+    document.getElementById('tabReqCount').textContent = list.length;
+
+    const user = getCurrentUser();
+    let html = '<div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">';
+    html += '<div style="font-size:14px;color:#666">共 ' + list.length + ' 条需求</div>';
+    html += '<button class="btn btn-primary" onclick="openSubmitRequirementModal()" style="font-size:13px;padding:6px 16px">提交新需求</button>';
+    html += '</div>';
+    if (list.length === 0) {
+      html += '<div style="text-align:center;padding:60px;color:#aaa">暂无需求记录</div>';
+    } else {
+      html += '<table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px">';
+      html += '<thead><tr>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">需求ID</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">需求名称</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">来源</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd">需求描述</th>';
+      html += '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;white-space:nowrap">状态</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">提交人</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">关联项目</th>';
+      html += '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;white-space:nowrap">操作</th>';
+      html += '</tr></thead><tbody>';
+      list.forEach(req => {
+        const st = REQ_STATUS_MAP[req.status] || REQ_STATUS_MAP.submitted;
+        const isSubmitter = user && req.submitter === user.username;
+        const isAccepted = req.status === 'accepted';
+        const isArchived = req.status === 'archived';
+        html += '<tr style="border-bottom:1px solid #eee">';
+        html += '<td style="padding:8px 10px;white-space:nowrap">' + escapeHtml(req.id || '') + '</td>';
+        html += '<td style="padding:8px 10px;white-space:nowrap;font-weight:500">' + escapeHtml(req.name || '') + '</td>';
+        html += '<td style="padding:8px 10px;white-space:nowrap">' + escapeHtml(req.source || '') + '</td>';
+        html += '<td style="padding:8px 10px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(req.description || '') + '">' + escapeHtml(req.description || '') + '</td>';
+        html += '<td style="padding:8px 10px;text-align:center"><span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;color:' + st.color + ';background:' + st.bg + ';border:1px solid ' + st.color + '">' + st.label + '</span></td>';
+        html += '<td style="padding:8px 10px;white-space:nowrap">' + escapeHtml(req.submitter || '') + '</td>';
+        html += '<td style="padding:8px 10px;font-size:12px;color:#555">' + escapeHtml((req.linked_projects || []).join(', ')) + '</td>';
+        html += '<td style="padding:8px 10px;text-align:center;white-space:nowrap">';
+        // 受理/拒绝按钮：canEditDirectly 权限
+        if (req.status === 'submitted' && canEditDirectly()) {
+          html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openAcceptRequirementModal(\'' + escapeHtml(req.id) + '\')">受理</button>';
+          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\'' + escapeHtml(req.id) + '\')">拒绝</button>';
+        }
+        // 归档按钮：提交者本人 或 editor/admin 可归档已受理的需求
+        if (isAccepted && (isSubmitter || canEditDirectly())) {
+          html += '<button class="btn btn-xs" style="margin-right:4px;background:#999;color:#fff" onclick="archiveRequirement(\'' + escapeHtml(req.id) + '\')">归档</button>';
+        }
+        // 回退按钮：提交者本人 或 editor/admin 可回退已受理的需求到 submitted
+        if (isAccepted && (isSubmitter || canEditDirectly())) {
+          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="revertRequirement(\'' + escapeHtml(req.id) + '\')">回退</button>';
+        }
+        // 归档态拒绝按钮：提交者本人 或 editor/admin 可拒绝已归档需求，回退到 submitted
+        if (isArchived && (isSubmitter || canEditDirectly())) {
+          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\'' + escapeHtml(req.id) + '\')">拒绝</button>';
+        }
+        // 删除按钮：canDelete 权限
+        if (canDelete()) {
+          html += '<button class="btn btn-danger btn-xs" style="margin-right:4px" onclick="deleteRequirement(\'' + escapeHtml(req.id) + '\')">删除</button>';
+        }
+        html += '</td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+    container.innerHTML = html;
+  } catch (e) {
+    console.error('[renderRequirements] 错误:', e);
+    container.innerHTML = '<div style="text-align:center;padding:60px;color:red">加载需求列表失败: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+// 提交需求弹窗
+function openSubmitRequirementModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:500px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px">提交新需求</h3>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+      </div>
+      <div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">需求名称 <span style="color:red">*</span></label>
+          <input type="text" id="reqName" placeholder="请输入需求名称" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">需求来源 <span style="color:red">*</span></label>
+          <select id="reqSource" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+            <option value="">请选择</option>
+            <option value="市场">市场</option>
+            <option value="客户">客户</option>
+            <option value="研发内部需求">研发内部需求</option>
+          </select>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">需求开发点描述 <span style="color:red">*</span></label>
+          <textarea id="reqDescription" rows="4" placeholder="请详细描述需求开发点" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">收件人 <span style="color:#999;font-weight:normal">(邮件发送用，可选)</span></label>
+          <div id="reqEmailTags" style="min-height:32px;padding:4px 8px;border:1px solid #ddd;border-radius:4px;background:#fafafa;margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+            <span style="color:#bbb;font-size:12px" id="reqEmailPlaceholder">点击右侧按钮选择成员</span>
+          </div>
+          <input type="hidden" id="reqEmailTo">
+          <div style="display:flex;gap:8px">
+            <button class="btn" onclick="openMemberSelectModal()" style="font-size:12px;padding:4px 12px;background:#e0e7ff;color:#4338ca">选择成员</button>
+            <input type="text" id="reqEmailExtra" placeholder="或手动输入邮箱，多个用逗号分隔" style="flex:1;padding:4px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;box-sizing:border-box">
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        <button class="btn" onclick="sendRequirementEmail()" style="margin-left:8px;background:#f59e0b;color:#fff">邮件发送</button>
+        <button class="btn btn-primary" onclick="submitRequirement()" style="margin-left:8px">提交</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+// 提交需求
+async function submitRequirement() {
+  const name = document.getElementById('reqName').value.trim();
+  const source = document.getElementById('reqSource').value;
+  const description = document.getElementById('reqDescription').value.trim();
+  if (!name) { alert('请输入需求名称'); return; }
+  if (!source) { alert('请选择需求来源'); return; }
+  if (!description) { alert('请输入需求描述'); return; }
+  try {
+    const resp = await fetch('/api/requirement/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, source, description })
+    });
+    if (!resp.ok) throw new Error('提交失败: ' + resp.status);
+    const result = await resp.json();
+    if (result.success) {
+      document.querySelector('.modal-overlay').remove();
+      alert('需求提交成功');
+      renderRequirements();
+    } else {
+      alert('提交失败: ' + (result.message || '未知错误'));
+    }
+  } catch (e) {
+    console.error('[submitRequirement] 错误:', e);
+    alert('提交出错: ' + (e.message || e));
+  }
+}
+
+// 发送需求邮件（使用 mailto 打开默认邮件客户端）
+function sendRequirementEmail() {
+  const name = document.getElementById('reqName').value.trim();
+  const description = document.getElementById('reqDescription').value.trim();
+  const toHidden = document.getElementById('reqEmailTo').value.trim();
+  const toExtra = document.getElementById('reqEmailExtra').value.trim();
+  if (!name) { alert('请先填写需求名称'); return; }
+  if (!description) { alert('请先填写需求开发点描述'); return; }
+  let allEmails = [];
+  if (toHidden) { allEmails.push(toHidden); }
+  if (toExtra) { allEmails.push(toExtra); }
+  let mailto = 'mailto:';
+  if (allEmails.length > 0) { mailto += encodeURIComponent(allEmails.join(',')); }
+  mailto += '?subject=' + encodeURIComponent(name);
+  mailto += '&body=' + encodeURIComponent(description);
+  window.location.href = mailto;
+}
+
+// 更新已选成员标签显示
+function updateEmailTags() {
+  const container = document.getElementById('reqEmailTags');
+  const placeholder = document.getElementById('reqEmailPlaceholder');
+  const hidden = document.getElementById('reqEmailTo');
+  const emails = (hidden.value || '').split(',').filter(e => e.trim());
+  if (emails.length === 0) {
+    container.innerHTML = '<span style="color:#bbb;font-size:12px" id="reqEmailPlaceholder">点击右侧按钮选择成员</span>';
+    return;
+  }
+  let html = emails.map(e => {
+    return '<span style="display:inline-flex;align-items:center;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:10px;font-size:12px;gap:4px">' +
+      escapeHtml(e) +
+      '<span style="cursor:pointer;font-weight:bold" onclick="removeEmailTag(\'' + e + '\')">&times;</span></span>';
+  }).join('');
+  container.innerHTML = html;
+}
+
+// 移除已选成员标签
+function removeEmailTag(email) {
+  const hidden = document.getElementById('reqEmailTo');
+  let emails = (hidden.value || '').split(',').filter(e => e.trim() && e.trim() !== email);
+  hidden.value = emails.join(',');
+  updateEmailTags();
+}
+
+// 打开成员选择弹窗
+async function openMemberSelectModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'memberSelectModal';
+  overlay.innerHTML = '<div class="modal-box" style="max-width:400px"><div style="text-align:center;padding:40px;color:#999">加载中...</div></div>';
+  document.body.appendChild(overlay);
+  try {
+    const resp = await fetch('/api/users/simple', {credentials: 'include'});
+    if (!resp.ok) throw new Error('加载失败');
+    const data = await resp.json();
+    const users = (data.users || []).filter(u => u.email);
+    if (users.length === 0) {
+      overlay.querySelector('.modal-box').innerHTML = '<div style="text-align:center;padding:40px;color:#999">暂无可选成员</div>';
+      return;
+    }
+    const currentEmails = (document.getElementById('reqEmailTo').value || '').split(',').filter(e => e.trim());
+    let listHtml = users.map(u => {
+      const checked = currentEmails.includes(u.email) ? 'checked' : '';
+      return '<label style="display:block;padding:8px 10px;border-bottom:1px solid #eee;cursor:pointer;font-size:13px">' +
+        '<input type="checkbox" value="' + escapeHtml(u.email) + '" ' + checked + ' style="margin-right:8px" class="member-checkbox">' +
+        escapeHtml(u.username) + ' <span style="color:#999;font-size:11px">' + escapeHtml(u.email) + '</span>' +
+        '</label>';
+    }).join('');
+    overlay.querySelector('.modal-box').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px">选择成员</h3>
+        <button class="modal-close" onclick="document.getElementById('memberSelectModal').remove()">&times;</button>
+      </div>
+      <div style="margin-bottom:10px">
+        <input type="text" id="memberSearch" placeholder="搜索成员..." oninput="filterMemberList()" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div id="memberList" style="max-height:280px;overflow-y:auto;border:1px solid #eee;border-radius:4px">${listHtml}</div>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn" onclick="document.getElementById('memberSelectModal').remove()">取消</button>
+        <button class="btn btn-primary" onclick="confirmMemberSelect()" style="margin-left:8px">确定</button>
+      </div>
+    `;
+  } catch (e) {
+    overlay.querySelector('.modal-box').innerHTML = '<div style="text-align:center;padding:40px;color:red">加载成员列表失败</div>';
+  }
+}
+
+// 搜索过滤成员列表
+function filterMemberList() {
+  const keyword = (document.getElementById('memberSearch').value || '').toLowerCase();
+  const items = document.querySelectorAll('#memberList label');
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(keyword) ? '' : 'none';
+  });
+}
+
+// 确认成员选择
+function confirmMemberSelect() {
+  const checked = document.querySelectorAll('#memberList .member-checkbox:checked');
+  const emails = Array.from(checked).map(cb => cb.value);
+  document.getElementById('reqEmailTo').value = emails.join(',');
+  updateEmailTags();
+  document.getElementById('memberSelectModal').remove();
+}
+
+// 打开受理弹窗
+function openAcceptRequirementModal(reqId) {
+  window._requirementAcceptCtx = { reqId, projectNames: [] };
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'acceptReqModal';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:560px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px">受理需求</h3>
+        <button class="modal-close" onclick="closeAcceptRequirementModal()">&times;</button>
+      </div>
+      <div>
+        <div style="margin-bottom:14px;padding:10px;background:#d9edf7;border-radius:4px;font-size:13px;color:#31708f">
+          <strong>受理流程：</strong>受理需求时，需要为此需求关联至少一个项目。您可以通过以下两种方式添加项目，添加完成后点击「完成受理」。
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:6px;font-size:13px;font-weight:500">已关联项目</label>
+          <div id="acceptProjectList" style="min-height:36px;padding:8px;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:13px;color:#999">
+            暂无关联项目
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:14px">
+          <button class="btn btn-primary" onclick="openAddProjectModal()" style="flex:1;font-size:13px">添加项目</button>
+          <button class="btn btn-primary" onclick="openLinkExistingProjectModal()" style="flex:1;font-size:13px">关联已有项目</button>
+          <button class="btn btn-primary" onclick="openImportModal()" style="flex:1;font-size:13px">从Project导入</button>
+        </div>
+      </div>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn" onclick="closeAcceptRequirementModal()">取消</button>
+        <button class="btn btn-success" onclick="finishAcceptRequirement('${escapeHtml(reqId)}')" style="margin-left:8px">完成受理</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  updateAcceptProjectList();
+}
+
+// 关闭受理弹窗
+function closeAcceptRequirementModal() {
+  window._requirementAcceptCtx = null;
+  const modal = document.getElementById('acceptReqModal');
+  if (modal) modal.remove();
+}
+
+// 关联已有项目弹窗（从当前项目列表中选取）
+function openLinkExistingProjectModal() {
+  const ctx = window._requirementAcceptCtx;
+  if (!ctx) return;
+  // 从 RAW_DATA.allProjects 中提取已有项目名
+  // 注意: RAW_DATA 是 const 声明的全局变量, 不在 window 上, 直接引用即可
+  const allProjects = (typeof RAW_DATA !== 'undefined' && RAW_DATA.allProjects) ? RAW_DATA.allProjects : [];
+  const projectNames = allProjects.map(p => p.项目 || p['项目名称'] || p['项目名'] || p.name || p.project || '').filter(n => n);
+  // 去重
+  const uniqueProjects = [...new Set(projectNames)];
+  if (uniqueProjects.length === 0) {
+    alert('当前没有可关联的项目');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'linkExistingProjectModal';
+  let listHtml = uniqueProjects.map(name => {
+    const alreadyLinked = ctx.projectNames.includes(name);
+    return '<label style="display:block;padding:8px 10px;border-bottom:1px solid #eee;cursor:pointer;font-size:13px">' +
+      '<input type="checkbox" value="' + escapeHtml(name) + '" ' + (alreadyLinked ? 'checked disabled' : '') +
+      ' style="margin-right:8px" onchange="toggleLinkProject(this, \'' + escapeHtml(name) + '\')">' +
+      escapeHtml(name) + (alreadyLinked ? ' <span style="color:#999;font-size:11px">(已关联)</span>' : '') +
+      '</label>';
+  }).join('');
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:480px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px">关联已有项目</h3>
+        <button class="modal-close" onclick="document.getElementById('linkExistingProjectModal').remove()">&times;</button>
+      </div>
+      <div style="margin-bottom:10px">
+        <input type="text" id="linkProjectSearch" placeholder="搜索项目名称..." oninput="filterLinkProjectList()" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div id="linkProjectList" style="max-height:300px;overflow-y:auto;border:1px solid #eee;border-radius:4px">
+        ${listHtml}
+      </div>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn" onclick="document.getElementById('linkExistingProjectModal').remove()">关闭</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+// 切换关联项目选中状态
+function toggleLinkProject(checkbox, name) {
+  const ctx = window._requirementAcceptCtx;
+  if (!ctx) return;
+  if (checkbox.checked) {
+    if (!ctx.projectNames.includes(name)) {
+      ctx.projectNames.push(name);
+    }
+  } else {
+    ctx.projectNames = ctx.projectNames.filter(n => n !== name);
+  }
+  updateAcceptProjectList();
+}
+
+// 搜索过滤关联项目列表
+function filterLinkProjectList() {
+  const keyword = (document.getElementById('linkProjectSearch').value || '').toLowerCase();
+  const items = document.querySelectorAll('#linkProjectList label');
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(keyword) ? '' : 'none';
+  });
+}
+
+// 更新已关联项目标签显示
+function updateAcceptProjectList() {
+  const container = document.getElementById('acceptProjectList');
+  if (!container) return;
+  const names = (window._requirementAcceptCtx && window._requirementAcceptCtx.projectNames) || [];
+  if (names.length === 0) {
+    container.innerHTML = '暂无关联项目';
+    container.style.color = '#999';
+  } else {
+    container.style.color = '#333';
+    container.innerHTML = names.map(n => {
+      return '<span style="display:inline-block;padding:3px 10px;margin:2px 4px 2px 0;background:#e8f0fe;color:#1a73e8;border-radius:12px;font-size:12px">' + escapeHtml(n) + '</span>';
+    }).join('');
+  }
+}
+
+// 完成受理
+async function finishAcceptRequirement(reqId) {
+  const ctx = window._requirementAcceptCtx;
+  if (!ctx) return;
+  if (ctx.projectNames.length === 0) {
+    alert('请至少关联一个项目后再完成受理');
+    return;
+  }
+  try {
+    // 1. 先关联项目
+    const linkResp = await fetch('/api/requirement/link-projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: reqId, project_names: ctx.projectNames })
+    });
+    if (!linkResp.ok) throw new Error('关联项目失败: ' + linkResp.status);
+    const linkResult = await linkResp.json();
+    if (!linkResult.success) throw new Error(linkResult.message || '关联项目失败');
+
+    // 2. 再标记受理
+    const acceptResp = await fetch('/api/requirement/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: reqId })
+    });
+    if (!acceptResp.ok) throw new Error('受理失败: ' + acceptResp.status);
+    const acceptResult = await acceptResp.json();
+    if (!acceptResult.success) throw new Error(acceptResult.message || '受理失败');
+
+    closeAcceptRequirementModal();
+    alert('需求已受理');
+    renderRequirements();
+  } catch (e) {
+    console.error('[finishAcceptRequirement] 错误:', e);
+    alert('受理出错: ' + (e.message || e));
+  }
+}
+
+// 拒绝需求（受理阶段拒绝=删除需求, 归档态拒绝=回退到submitted）
+async function rejectRequirement(reqId) {
+  const reason = prompt('请输入拒绝原因（至少2个字）：');
+  if (!reason) return;
+  if (reason.trim().length < 2) {
+    alert('拒绝原因至少需要2个字');
+    return;
+  }
+  try {
+    const resp = await fetch('/api/requirement/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: reqId, reason: reason.trim() })
+    });
+    if (!resp.ok) throw new Error('拒绝失败: ' + resp.status);
+    const result = await resp.json();
+    if (result.success) {
+      // 后端根据原状态自动判断: accepted/submitted→deleted(删除通知), archived→submitted(回退)
+      if (result.reject_reason && result.req_name) {
+        // STEP3.5: 受理阶段拒绝，需求被删除，显示拒绝通知
+        showRequirementRejectNotification(result.req_name, result.reject_reason);
+      } else {
+        // STEP6.5: 归档态拒绝，回退到待受理
+        alert('需求已拒绝，回退到待受理状态');
+      }
+      renderRequirements();
+    } else {
+      alert('拒绝失败: ' + (result.message || '未知错误'));
+    }
+  } catch (e) {
+    console.error('[rejectRequirement] 错误:', e);
+    alert('拒绝出错: ' + (e.message || e));
+  }
+}
+
+// 需求被拒绝通知弹窗（受理阶段拒绝后显示给提交者）
+function showRequirementRejectNotification(reqName, reason) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:420px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px;color:#d32f2f">需求被拒绝</h3>
+      </div>
+      <div>
+        <div style="margin-bottom:12px;padding:10px;background:#ffebee;border-radius:4px;font-size:13px;color:#c62828">
+          <strong>需求名称：</strong>${escapeHtml(reqName)}<br>
+          <strong>该需求已被拒绝并删除。</strong>
+        </div>
+        <div style="font-size:13px;color:#555">
+          <strong>拒绝原因：</strong><br>
+          ${escapeHtml(reason)}
+        </div>
+        <div style="margin-top:12px;padding:8px;background:#fff3e0;border-radius:4px;font-size:12px;color:#e65100">
+          如需继续，请重新提交该需求。
+        </div>
+      </div>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove()">知道了</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+// 回退需求（accepted → submitted，重新运行STEP3）
+async function revertRequirement(reqId) {
+  if (!confirm('确定要回退该需求吗？回退后将变为待受理状态，编辑者需重新受理。')) return;
+  try {
+    const resp = await fetch('/api/requirement/revert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: reqId })
+    });
+    if (!resp.ok) throw new Error('回退失败: ' + resp.status);
+    const result = await resp.json();
+    if (result.success) {
+      alert('需求已回退到待受理状态');
+      renderRequirements();
+    } else {
+      alert('回退失败: ' + (result.message || '未知错误'));
+    }
+  } catch (e) {
+    console.error('[revertRequirement] 错误:', e);
+    alert('回退出错: ' + (e.message || e));
+  }
+}
+
+// 归档需求
+async function archiveRequirement(reqId) {
+  if (!confirm('确定要归档该需求吗？')) return;
+  try {
+    const resp = await fetch('/api/requirement/archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: reqId })
+    });
+    if (!resp.ok) throw new Error('归档失败: ' + resp.status);
+    const result = await resp.json();
+    if (result.success) {
+      alert('需求已归档');
+      renderRequirements();
+    } else {
+      alert('归档失败: ' + (result.message || '未知错误'));
+    }
+  } catch (e) {
+    console.error('[archiveRequirement] 错误:', e);
+    alert('归档出错: ' + (e.message || e));
+  }
+}
+
+// 删除需求
+async function deleteRequirement(reqId) {
+  if (!confirm('确定要删除该需求吗？此操作不可恢复。')) return;
+  try {
+    const resp = await fetch('/api/requirement/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: reqId })
+    });
+    if (!resp.ok) throw new Error('删除失败: ' + resp.status);
+    const result = await resp.json();
+    if (result.success) {
+      alert('需求已删除');
+      renderRequirements();
+    } else {
+      alert('删除失败: ' + (result.message || '未知错误'));
+    }
+  } catch (e) {
+    console.error('[deleteRequirement] 错误:', e);
+    alert('删除出错: ' + (e.message || e));
   }
 }
 

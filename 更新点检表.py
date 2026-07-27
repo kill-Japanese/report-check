@@ -6416,7 +6416,7 @@ function updateEmailTags() {
   let html = emails.map(e => {
     return '<span style="display:inline-flex;align-items:center;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:10px;font-size:12px;gap:4px">' +
       escapeHtml(e) +
-      '<span style="cursor:pointer;font-weight:bold" onclick="removeEmailTag(\'' + e + '\')">&times;</span></span>';
+      '<span style="cursor:pointer;font-weight:bold" onclick="removeEmailTag(\\'' + e + '\\')">&times;</span></span>';
   }).join('');
   container.innerHTML = html;
 }
