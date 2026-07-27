@@ -9,9 +9,32 @@
     "戴于东": "yudong.dai@hxgroup.com",
     "姚金星": "jinxing.yao@hxgroup.com",
     "张国庆": "guoqing.zhang@hxgroup.com",
-    "魏殷浩": "yinhao.wei@hxgroup.com"
+    "魏殷浩": "yinhao.wei@hxgroup.com",
+    "文春英": "chunying.wen@hxgroup.com",
+    "杨慧霞": "huixia.yang@hxgroup.com",
+    "罗穗安": "suian.luo@hxgroup.com",
+    "肖庆阳": "qingyang.xiao@hxgroup.com",
+    "袁知正": "zhizheng.yuan@hxgroup.com",
+    "贾峰": "feng.jia@hxgroup.com",
+    "采购": "gou.cai@hxgroup.com",
+    "韩燕飞": "yanfei.han@hxgroup.com"
   },
-  "newProjects": [],
+  "newProjects": [
+    {
+      "id": 218,
+      "部门": "测试",
+      "项目": "测试看板",
+      "项目开始时间": "1900-01-01",
+      "项目结束时间": "2100-01-01",
+      "项目描述": "测试",
+      "资源类型": "项目经理",
+      "资源名称": "项家祺",
+      "资源开始时间": "2026-07-27",
+      "资源结束时间": "2026-07-27",
+      "日平均工时": 8,
+      "已归档": false
+    }
+  ],
   "deletedIds": [],
-  "lastUpdate": "2026-07-21T14:26:23.194907"
+  "lastUpdate": "2026-07-27T00:25:08.635838"
 }
