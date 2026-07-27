@@ -71,14 +71,14 @@
 ```mermaid
 flowchart TD
     A["无状态"] -->|STEP1: 任意用户提交| B["submitted<br/>需求导入态"]
-    B -->|STEP1.5: 提交者撤回<br/>状态回退到无| A
     B -->|STEP3: 编辑者受理| C["accepted<br/>需求受理态"]
-    C -->|STEP3.5: 编辑者拒绝<br/>需填写拒绝原因>1字<br/>显示拒绝通知, 状态变为无状态<br/>需求被删除, 需重新导入| A
-    C -->|STEP5: 完成项目导入后<br/>自动设置3天期限| D["accepted<br/>需求受理态(已关联项目)"]
-    D -->|STEP6: 提交者确认归档| E["archived<br/>需求归档态"]
-    D -->|STEP6.5: 归档态拒绝<br/>回退到submitted<br/>重新运行STEP3| B
-    D -->|STEP7: 3天未操作<br/>系统自动归档| F["archived<br/>需求归档态(自动归档)"]
-    E -->|STEP8: 系统删除<br/>仅admin, 信息抹除| G["deleted<br/>需求删除态"]
+    B -->|STEP3.5: 编辑者拒绝<br/>需填写拒绝原因>1字<br/>状态变为已删除| G["deleted<br/>需求删除态"]
+    C -->|STEP5: 提交者归档| E["archived<br/>需求归档态(手动)"]
+    C -->|STEP5: 编辑者回退<br/>accepted→submitted<br/>清除受理人/时间| B
+    C -->|STEP7: 3天未操作<br/>系统自动归档| F["archived<br/>需求归档态(自动)"]
+    E -->|STEP6.5: 归档态拒绝<br/>editor/admin<br/>回退到submitted| B
+    F -->|STEP6.5: 归档态拒绝<br/>editor/admin<br/>回退到submitted| B
+    E -->|STEP8: 系统删除<br/>仅admin, 信息抹除| G
     F -->|STEP8: 系统删除<br/>仅admin, 信息抹除| G
 ```
 
@@ -99,7 +99,7 @@ flowchart TD
   - 系统生成需求ID（REQ-YYYYMMDD-NNN）
   - 状态 → submitted（需求导入态）
   - 写入 Excel 操作记录（类型：requirement_submit）
-  - 提交者可随时「撤回」需求
+  - 提交者不可再编辑，等待编辑者受理
 ```
 
 ### STEP 2：需求等待受理
@@ -107,8 +107,8 @@ flowchart TD
 ```
 当前状态：submitted（需求导入态）
 可见操作：
-  - 提交者：「撤回」按钮（将需求从列表移除）
-  - 编辑者以上：「受理」「拒绝」按钮
+  - editor/admin：「受理」「拒绝」按钮
+  - 提交者本人：仅查看
   - 普通用户：仅查看
 显示信息：
   - 需求ID、名称、来源、描述
@@ -226,7 +226,7 @@ flowchart TD
 后端处理：
   - 状态 → submitted（回退到需求导入态）
   - 记录拒绝人、拒绝时间、拒绝原因
-  - 清除归档时间和归档类型
+  - 清除受理人、受理时间、归档期限、归档时间和归档类型
   - 保留已关联的项目名（不清除）
   - 写入 Excel 操作记录（类型：requirement_reject，变更后含拒绝原因）
 完成后：
@@ -249,15 +249,15 @@ flowchart TD
   - 服务器重启后会立即检查并归档所有超期需求，不会遗漏
 ```
 
-### STEP 3.5：编辑者拒绝（受理阶段）
+### STEP 3.5：编辑者拒绝（受理阶段 → 删除）
 
 ```
 操作人：editor / admin
-触发：点击「拒绝」按钮
+触发：点击待受理或已受理需求行上的「拒绝」按钮
 输入弹窗：
-  - prompt("请输入拒绝原因（将删除该需求）：")
+  - prompt("请输入拒绝原因（至少2个字）：")
   - 约束：拒绝原因必须大于1个字（>1个字符）
-后端处理：
+后端处理（待受理 submitted 或已受理 accepted → 删除）：
   - 状态 → deleted（需求删除态）
   - 记录拒绝人、拒绝时间、拒绝原因
   - 清除关联的项目名
@@ -297,7 +297,7 @@ flowchart TD
 | GET | `/api/requirements` | 已登录 | 获取需求列表，支持 `?status=` 过滤 |
 | POST | `/api/requirement/submit` | 已登录（任意角色） | 提交新需求 |
 | POST | `/api/requirement/accept` | `edit` | 受理需求，状态变为 accepted，设置 3 天归档期限 |
-| POST | `/api/requirement/reject` | `edit` | 拒绝需求，状态回退为 submitted |
+| POST | `/api/requirement/reject` | `edit` | 拒绝需求（待受理/已受理→删除 / 已归档→回退到 submitted） |
 | POST | `/api/requirement/archive` | 本人 或 `edit` | 提交者确认归档 |
 | POST | `/api/requirement/revert` | `edit` | 回退已受理需求到 submitted（仅 editor/admin） |
 | POST | `/api/requirement/delete` | `delete` | 抹除需求信息（仅 admin） |
@@ -323,7 +323,8 @@ flowchart TD
 **POST /api/requirement/reject**
 
 - Body: `{"id": "REQ-20260725-001", "reason": "资源不足"}`
-- Response: `{"success": true, "message": "已拒绝并回退"}`
+- Response (待受理/已受理→删除): `{"success": true, "message": "需求已拒绝并删除", "reject_reason": "...", "req_name": "..."}`
+- Response (已归档→回退): `{"success": true, "message": "需求已拒绝，回退到待受理状态"}`
 
 **POST /api/requirement/archive**
 
@@ -386,7 +387,7 @@ def _log_requirement_operation(op_type, operator, req_name, before_data, after_d
 
 ### 3.4 路由实现位置
 
-在 `协作服务器_安全版.py` 的 `do_GET` 方法中，在 `if path == '/api/operations/list':` 之后、`# 其他静态文件` 之前插入：
+在 `协作服务器_安全版.py` 的 `do_GET` 方法中，在 `if path == '/api/requirements':` 处（约第 1737 行）：
 
 ```python
         # --- API: 需求导入列表（需已登录）---
@@ -403,7 +404,15 @@ def _log_requirement_operation(op_type, operator, req_name, before_data, after_d
             return
 ```
 
-在 `do_POST` 方法中，在 `if path == '/api/pull-github':` 之后、方法结束前插入 7 个新端点。
+在 `do_POST` 方法中，`/api/requirements` 兼容路由之后、`/api/upload` 之前插入 7 个需求端点：
+
+- `/api/requirement/submit` — 提交新需求
+- `/api/requirement/accept` — 受理需求
+- `/api/requirement/reject` — 拒绝需求（待受理→删除 / 已归档→回退到待受理）
+- `/api/requirement/archive` — 归档需求（提交者本人或 editor/admin）
+- `/api/requirement/revert` — 回退已受理需求到 submitted（仅 editor/admin）
+- `/api/requirement/delete` — 删除需求（仅 admin）
+- `/api/requirement/link-projects` — 关联项目名称
 
 **受理端点关键逻辑**：
 
@@ -453,9 +462,9 @@ def _log_requirement_operation(op_type, operator, req_name, before_data, after_d
             req_id = data.get('id', '')
             req_data = load_requirements()
             req = next(...)
-            # 权限检查：本人 或 editor/admin
-            if req['submitter'] != user['username'] and not auth.has_permission(user['username'], 'edit'):
-                self.send_json({'success': False, 'message': '权限不足'}, 403)
+            # 权限检查：提交者本人 或 editor/admin
+            if req['submitter'] != user['username'] and 'edit' not in user.get('permissions', []):
+                self.send_json({'success': False, 'message': '权限不足，仅需求提交者或编辑者可归档'}, 403)
                 return
             req['status'] = 'archived'
             req['archive_time'] = datetime.now().isoformat()
@@ -474,7 +483,6 @@ def _log_requirement_operation(op_type, operator, req_name, before_data, after_d
     # 需求自动归档定时任务（每小时检查一次）
     def _auto_archive_requirements():
         while True:
-            time.sleep(3600)
             try:
                 from datetime import datetime
                 req_data = load_requirements()
@@ -493,9 +501,11 @@ def _log_requirement_operation(op_type, operator, req_name, before_data, after_d
                             )
                 if changed:
                     save_requirements(req_data)
+                    print(f'[自动归档] 已归档 {count} 条超期需求')
                     auth.sync_to_github('需求自动归档')
             except Exception as e:
                 print(f'[自动归档] 检查失败: {e}')
+            time.sleep(3600)  # 先检查再sleep，服务器重启后立即归档超期需求
     
     threading.Thread(target=_auto_archive_requirements, daemon=True).start()
 ```
@@ -546,96 +556,79 @@ def _log_requirement_operation(op_type, operator, req_name, before_data, after_d
 ```javascript
 async function renderRequirements() {
   const container = document.getElementById('tableContainer');
-  const currentUser = getCurrentUser();
-  const username = currentUser ? currentUser.username : '';
-  const canEdit = canEditDirectly();
-  const canDel = canDelete();
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:#999">加载中...</div>';
   
   try {
-    const resp = await fetch('/api/requirements');
-    if (!resp.ok) throw new Error('加载失败');
+    const resp = await fetch('/api/requirements', {method: 'POST', credentials: 'include'});
+    if (!resp.ok) throw new Error('获取需求列表失败: ' + resp.status);
     const data = await resp.json();
-    const reqs = data.requirements || [];
+    const list = data.requirements || data || [];
     
-    // 更新 badge
-    const pendingCount = reqs.filter(r => r.status === 'submitted').length;
-    document.getElementById('tabReqCount').textContent = pendingCount;
-    
-    let html = `
-      <div style="margin-bottom:16px">
-        <button class="btn" style="background:#ec4899;color:white" onclick="openSubmitRequirementModal()">提交新需求</button>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead style="background:#f3f4f6;position:sticky;top:0">
-          <tr>
-            <th style="padding:10px;text-align:left">需求ID</th>
-            <th style="padding:10px;text-align:left">名称</th>
-            <th style="padding:10px;text-align:left">来源</th>
-            <th style="padding:10px;text-align:left">描述</th>
-            <th style="padding:10px;text-align:left">状态</th>
-            <th style="padding:10px;text-align:left">提交人</th>
-            <th style="padding:10px;text-align:left">关联项目</th>
-            <th style="padding:10px;text-align:center">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
-    
-    const statusMap = {
-      submitted: { text: '待受理', color: '#f59e0b', bg: '#fef3c7' },
-      accepted: { text: '已受理', color: '#3b82f6', bg: '#dbeafe' },
-      archived: { text: '已归档', color: '#6b7280', bg: '#f3f4f6' },
-      deleted: { text: '已删除', color: '#ef4444', bg: '#fee2e2' }
-    };
-    
-    reqs.forEach(req => {
-      const st = statusMap[req.status] || statusMap.submitted;
-      const linked = (req.linked_projects || []).join(', ') || '-';
-      let actions = '';
-      
-      if (req.status === 'submitted') {
-        if (canEdit) {
-          actions += `<button class="btn btn-success" style="padding:4px 10px;font-size:12px" onclick="openAcceptRequirementModal('${req.id}')">受理</button> `;
-          actions += `<button class="btn btn-secondary" style="padding:4px 10px;font-size:12px" onclick="rejectRequirement('${req.id}')">拒绝</button>`;
-        } else {
-          actions += '<span style="color:#9ca3af;font-size:12px">等待受理</span>';
+    // 更新 tab 徽标
+    document.getElementById('tabReqCount').textContent = list.length;
+
+    const user = getCurrentUser();
+    let html = '<div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">';
+    html += '<div style="font-size:14px;color:#666">共 ' + list.length + ' 条需求</div>';
+    html += '<button class="btn btn-primary" onclick="openSubmitRequirementModal()" style="font-size:13px;padding:6px 16px">提交新需求</button>';
+    html += '</div>';
+    if (list.length === 0) {
+      html += '<div style="text-align:center;padding:60px;color:#aaa">暂无需求记录</div>';
+    } else {
+      html += '<table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px">';
+      html += '<thead><tr>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">需求ID</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">需求名称</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">来源</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd">需求描述</th>';
+      html += '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;white-space:nowrap">状态</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">提交人</th>';
+      html += '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;white-space:nowrap">关联项目</th>';
+      html += '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;white-space:nowrap">操作</th>';
+      html += '</tr></thead><tbody>';
+      list.forEach(req => {
+        const st = REQ_STATUS_MAP[req.status] || REQ_STATUS_MAP.submitted;
+        const isSubmitter = user && req.submitter === user;
+        const isAccepted = req.status === 'accepted';
+        const isArchived = req.status === 'archived';
+        html += '<tr style="border-bottom:1px solid #eee">';
+        html += '<td style="padding:8px 10px;white-space:nowrap">' + escapeHtml(req.id || '') + '</td>';
+        html += '<td style="padding:8px 10px;white-space:nowrap;font-weight:500">' + escapeHtml(req.name || '') + '</td>';
+        html += '<td style="padding:8px 10px;white-space:nowrap">' + escapeHtml(req.source || '') + '</td>';
+        html += '<td style="padding:8px 10px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(req.description || '') + '">' + escapeHtml(req.description || '') + '</td>';
+        html += '<td style="padding:8px 10px;text-align:center"><span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;color:' + st.color + ';background:' + st.bg + ';border:1px solid ' + st.color + '">' + st.label + '</span></td>';
+        html += '<td style="padding:8px 10px;white-space:nowrap">' + escapeHtml(req.submitter || '') + '</td>';
+        html += '<td style="padding:8px 10px;font-size:12px;color:#555">' + escapeHtml((req.linked_projects || []).join(', ')) + '</td>';
+        html += '<td style="padding:8px 10px;text-align:center;white-space:nowrap">';
+        // 受理/拒绝按钮：canEditDirectly 权限
+        if (req.status === 'submitted' && canEditDirectly()) {
+          html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openAcceptRequirementModal(\'' + escapeHtml(req.id) + '\')">受理</button>';
+          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\'' + escapeHtml(req.id) + '\')">拒绝</button>';
         }
-      } else if (req.status === 'accepted') {
-        if (req.submitter === username || canEdit) {
-          actions += `<button class="btn" style="background:#8b5cf6;color:white;padding:4px 10px;font-size:12px" onclick="archiveRequirement('${req.id}')">归档</button>`;
+        // 归档按钮：提交者本人 或 editor/admin 可归档已受理的需求
+        if (isAccepted && (isSubmitter || canEditDirectly())) {
+          html += '<button class="btn btn-xs" style="margin-right:4px;background:#999;color:#fff" onclick="archiveRequirement(\'' + escapeHtml(req.id) + '\')">归档</button>';
         }
-        if (canEdit && req.linked_projects && req.linked_projects.length > 0) {
-          actions += ` <span style="color:#3b82f6;font-size:12px">已关联${req.linked_projects.length}个项目</span>`;
+        // 回退按钮：仅 editor/admin 可回退已受理的需求到 submitted
+        if (isAccepted && canEditDirectly()) {
+          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="revertRequirement(\'' + escapeHtml(req.id) + '\')">回退</button>';
         }
-      } else if (req.status === 'archived') {
-        actions += '<span style="color:#6b7280;font-size:12px">已完成</span>';
-      }
-      
-      if (canDel && req.status !== 'deleted') {
-        actions += ` <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px" onclick="deleteRequirement('${req.id}')">删除</button>`;
-      }
-      
-      html += `
-        <tr style="border-bottom:1px solid #f3f4f6">
-          <td style="padding:10px;font-family:monospace;font-size:12px">${req.id}</td>
-          <td style="padding:10px;font-weight:600">${escapeHtml(req.name)}</td>
-          <td style="padding:10px">${escapeHtml(req.source)}</td>
-          <td style="padding:10px;max-width:300px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(req.description)}</td>
-          <td style="padding:10px"><span style="background:${st.bg};color:${st.color};padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600">${st.text}</span></td>
-          <td style="padding:10px">${req.submitter}</td>
-          <td style="padding:10px;font-size:12px;color:#6b7280">${escapeHtml(linked)}</td>
-          <td style="padding:10px;text-align:center;white-space:nowrap">${actions}</td>
-        </tr>
-      `;
-    });
-    
-    html += '</tbody></table>';
-    if (reqs.length === 0) {
-      html += '<div style="text-align:center;color:#9ca3af;padding:60px">暂无需求记录</div>';
+        // 归档态拒绝按钮：editor/admin 可拒绝已归档需求，回退到 submitted
+        if (isArchived && canEditDirectly()) {
+          html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\'' + escapeHtml(req.id) + '\')">拒绝</button>';
+        }
+        // 删除按钮：canDelete 权限
+        if (canDelete()) {
+          html += '<button class="btn btn-danger btn-xs" style="margin-right:4px" onclick="deleteRequirement(\'' + escapeHtml(req.id) + '\')">删除</button>';
+        }
+        html += '</td></tr>';
+      });
+      html += '</tbody></table>';
     }
     container.innerHTML = html;
   } catch (e) {
-    container.innerHTML = `<div style="text-align:center;color:#ef4444;padding:40px">加载失败：${e.message}</div>`;
+    console.error('[renderRequirements] 错误:', e);
+    container.innerHTML = '<div style="text-align:center;padding:60px;color:red">加载需求列表失败: ' + escapeHtml(e.message) + '</div>';
   }
 }
 ```
@@ -714,51 +707,58 @@ function openAcceptRequirementModal(reqId) {
   // 初始化全局上下文
   window._requirementAcceptCtx = { reqId, projectNames: [] };
   
-  const modal = document.createElement('div');
-  modal.id = 'acceptReqOverlay';
-  modal.className = 'modal-overlay';
-  modal.innerHTML = `
-    <div class="modal-box" style="max-width:600px">
-      <button class="modal-close" onclick="closeAcceptRequirementModal()">×</button>
-      <h3>受理需求</h3>
-      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:#0369a1">
-        <strong>流程说明：</strong><br>
-        1. 点击下方按钮添加任务或导入项目<br>
-        2. 可多次添加，所有项目名将自动收集<br>
-        3. 添加完成后点击「完成受理」确认
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'acceptReqModal';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:560px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px">受理需求</h3>
+        <button class="modal-close" onclick="closeAcceptRequirementModal()">&times;</button>
       </div>
-      <div id="reqLinkedProjects" style="margin-bottom:16px;display:none">
-        <label style="font-size:13px;font-weight:600">已关联项目：</label>
-        <div id="reqLinkedProjectsList" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px"></div>
+      <div>
+        <div style="margin-bottom:14px;padding:10px;background:#d9edf7;border-radius:4px;font-size:13px;color:#31708f">
+          <strong>受理流程：</strong>受理需求时，需要为此需求关联至少一个项目。您可以通过以下两种方式添加项目，添加完成后点击「完成受理」。
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:6px;font-size:13px;font-weight:500">已关联项目</label>
+          <div id="acceptProjectList" style="min-height:36px;padding:8px;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:13px;color:#999">
+            暂无关联项目
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:14px">
+          <button class="btn btn-primary" onclick="openAddProjectModal()" style="flex:1;font-size:13px">添加项目</button>
+          <button class="btn btn-primary" onclick="openLinkExistingProjectModal()" style="flex:1;font-size:13px">关联已有项目</button>
+          <button class="btn btn-primary" onclick="openImportModal()" style="flex:1;font-size:13px">从Project导入</button>
+        </div>
       </div>
-      <div style="display:flex;gap:10px;margin-bottom:16px">
-        <button class="btn" style="background:#ec4899;color:white;flex:1" onclick="openAddProjectModal()">添加项目</button>
-        <button class="btn" style="background:#8b5cf6;color:white;flex:1" onclick="openImportModal()">从Project导入</button>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-secondary" onclick="closeAcceptRequirementModal()">取消</button>
-        <button class="btn btn-success" onclick="finishAcceptRequirement('${reqId}')">完成受理</button>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn" onclick="closeAcceptRequirementModal()">取消</button>
+        <button class="btn btn-success" onclick="finishAcceptRequirement('${escapeHtml(reqId)}')" style="margin-left:8px">完成受理</button>
       </div>
     </div>
   `;
-  document.body.appendChild(modal);
+  document.body.appendChild(overlay);
+  updateAcceptProjectList();
 }
 
 function closeAcceptRequirementModal() {
   window._requirementAcceptCtx = null;
-  const overlay = document.getElementById('acceptReqOverlay');
-  if (overlay) overlay.remove();
+  const modal = document.getElementById('acceptReqModal');
+  if (modal) modal.remove();
 }
 
 function updateAcceptProjectList() {
   const ctx = window._requirementAcceptCtx;
-  if (!ctx || ctx.projectNames.length === 0) return;
-  const container = document.getElementById('reqLinkedProjects');
-  const list = document.getElementById('reqLinkedProjectsList');
-  if (container) container.style.display = 'block';
-  if (list) {
-    list.innerHTML = ctx.projectNames.map(n => 
-      `<span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:6px;font-size:12px">${escapeHtml(n)}</span>`
+  if (!ctx || ctx.projectNames.length === 0) {
+    const container = document.getElementById('acceptProjectList');
+    if (container) container.innerHTML = '暂无关联项目';
+    return;
+  }
+  const container = document.getElementById('acceptProjectList');
+  if (container) {
+    container.innerHTML = ctx.projectNames.map(n => 
+      `<span style="display:inline-block;background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:6px;font-size:12px;margin:2px">${escapeHtml(n)}</span>`
     ).join('');
   }
 }
@@ -827,7 +827,81 @@ function updateAcceptProjectList() {
       }
 ```
 
-### 4.7 完成受理与操作函数
+### 4.7 关联已有项目弹窗
+
+新增 `openLinkExistingProjectModal()`、`toggleLinkProject()` 和 `filterLinkProjectList()` 函数：
+
+```javascript
+// 关联已有项目弹窗（从当前项目列表中选取）
+function openLinkExistingProjectModal() {
+  const ctx = window._requirementAcceptCtx;
+  if (!ctx) return;
+  // 从 RAW_DATA.allProjects 中提取已有项目名
+  const allProjects = (typeof RAW_DATA !== 'undefined' && RAW_DATA.allProjects) ? RAW_DATA.allProjects : [];
+  const projectNames = allProjects.map(p => p.项目 || p['项目名称'] || p['项目名'] || p.name || p.project || '').filter(n => n);
+  // 去重
+  const uniqueProjects = [...new Set(projectNames)];
+  if (uniqueProjects.length === 0) {
+    alert('当前没有可关联的项目');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'linkExistingProjectModal';
+  let listHtml = uniqueProjects.map(name => {
+    const alreadyLinked = ctx.projectNames.includes(name);
+    return '<label style="display:block;padding:8px 10px;border-bottom:1px solid #eee;cursor:pointer;font-size:13px">' +
+      '<input type="checkbox" value="' + escapeHtml(name) + '" ' + (alreadyLinked ? 'checked disabled' : '') +
+      ' style="margin-right:8px" onchange="toggleLinkProject(this, \'' + escapeHtml(name) + '\')">' +
+      escapeHtml(name) + (alreadyLinked ? ' <span style="color:#999;font-size:11px">(已关联)</span>' : '') +
+      '</label>';
+  }).join('');
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:480px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:16px">关联已有项目</h3>
+        <button class="modal-close" onclick="document.getElementById('linkExistingProjectModal').remove()">&times;</button>
+      </div>
+      <div style="margin-bottom:10px">
+        <input type="text" id="linkProjectSearch" placeholder="搜索项目名称..." oninput="filterLinkProjectList()" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div id="linkProjectList" style="max-height:300px;overflow-y:auto;border:1px solid #eee;border-radius:4px">
+        ${listHtml}
+      </div>
+      <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
+        <button class="btn" onclick="document.getElementById('linkExistingProjectModal').remove()">关闭</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+// 切换关联项目选中状态
+function toggleLinkProject(checkbox, name) {
+  const ctx = window._requirementAcceptCtx;
+  if (!ctx) return;
+  if (checkbox.checked) {
+    if (!ctx.projectNames.includes(name)) {
+      ctx.projectNames.push(name);
+    }
+  } else {
+    ctx.projectNames = ctx.projectNames.filter(n => n !== name);
+  }
+  updateAcceptProjectList();
+}
+
+// 搜索过滤关联项目列表
+function filterLinkProjectList() {
+  const keyword = (document.getElementById('linkProjectSearch').value || '').toLowerCase();
+  const items = document.querySelectorAll('#linkProjectList label');
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(keyword) ? '' : 'none';
+  });
+}
+```
+
+### 4.8 完成受理与操作函数
 
 新增 `finishAcceptRequirement()` 及状态操作函数：
 
@@ -993,11 +1067,12 @@ async function deleteRequirement(reqId) {
 
 1. 在 `do_GET` 方法中，`/api/operations/list` 路由之后，新增 `/api/requirements` 路由处理。
 
-2. 在 `do_POST` 方法末尾（`if path == '/api/pull-github':` 之后），按顺序插入 7 个新端点：
+2. 在 `do_POST` 方法中，按顺序插入 7 个需求端点：
    - `/api/requirement/submit`
    - `/api/requirement/accept`
    - `/api/requirement/reject`
    - `/api/requirement/archive`
+   - `/api/requirement/revert`（回退，accepted→submitted）
    - `/api/requirement/delete`
    - `/api/requirement/link-projects`
 
@@ -1011,7 +1086,22 @@ async function deleteRequirement(reqId) {
 
 2. 在 `bindEvents()` 中，修改 tab click 处理逻辑，增加 `currentTab === 'requirements'` 分支调用 `renderRequirements()`。
 
-3. 在 `<script>` 区域新增 `renderRequirements()`、`openSubmitRequirementModal()`、`submitRequirement()`、`openAcceptRequirementModal()`、`closeAcceptRequirementModal()`、`updateAcceptProjectList()`、`finishAcceptRequirement()`、`rejectRequirement()`、`archiveRequirement()`、`deleteRequirement()` 函数。
+3. 在 `<script>` 区域新增以下前端函数：
+   - `renderRequirements()` — 渲染需求列表（含状态标签、按权限控制按钮显示）
+   - `openSubmitRequirementModal()` — 提交新需求弹窗
+   - `submitRequirement()` — 提交需求 API 调用
+   - `openAcceptRequirementModal(reqId)` — 受理弹窗（含关联已有项目按钮）
+   - `openLinkExistingProjectModal()` — 关联已有项目选择器弹窗
+   - `toggleLinkProject(checkbox, name)` — 切换关联项目选中状态
+   - `filterLinkProjectList()` — 搜索过滤关联项目列表
+   - `closeAcceptRequirementModal()` — 关闭受理弹窗
+   - `updateAcceptProjectList()` — 更新已关联项目标签显示
+   - `finishAcceptRequirement(reqId)` — 完成受理（link-projects + accept）
+   - `rejectRequirement(reqId)` — 拒绝需求（待受理→删除 / 已归档→回退到待受理）
+   - `archiveRequirement(reqId)` — 归档需求
+   - `revertRequirement(reqId)` — 回退已受理需求到 submitted
+   - `deleteRequirement(reqId)` — 删除需求（仅 admin）
+   - `showRequirementRejectNotification(reqName, reason)` — 显示拒绝通知
 
 ### 步骤 4：弹窗复用改造
 
@@ -1047,13 +1137,13 @@ async function deleteRequirement(reqId) {
 | 文件 | 修改类型 | 改动内容 |
 |------|----------|----------|
 | `/workspace/协作服务器_安全版.py` | 新增函数 | `load_requirements`, `save_requirements`, `_generate_req_id`, `_log_requirement_operation`, `_auto_archive_requirements` |
-| `/workspace/协作服务器_安全版.py` | 新增路由 | `do_GET` 中 `/api/requirements`；`do_POST` 中 6 个需求端点 |
-| `/workspace/协作服务器_安全版.py` | 修改 | `main()` 中启动自动归档线程 |
+| `/workspace/协作服务器_安全版.py` | 新增路由 | `do_GET` 中 `/api/requirements`；`do_POST` 中 8 个需求端点（含 `revert`） |
+| `/workspace/协作服务器_安全版.py` | 修改 | `main()` 中启动自动归档线程（先检查再 sleep） |
 | `/workspace/更新点检表.py` | 修改 HTML | tabs 区域新增需求导入 tab |
 | `/workspace/更新点检表.py` | 修改 JS | `bindEvents()` tab 切换逻辑 |
 | `/workspace/更新点检表.py` | 修改 JS | `submitNewProject()` 弹窗关闭逻辑 |
 | `/workspace/更新点检表.py` | 修改 JS | `submitImport()` 弹窗关闭逻辑 |
-| `/workspace/更新点检表.py` | 新增 JS | `renderRequirements` 及全部需求操作函数 |
+| `/workspace/更新点检表.py` | 新增 JS | `renderRequirements` 及全部 15 个需求操作函数 |
 | `/workspace/data/需求导入.json` | 新增文件 | 运行时自动生成，无需预创建 |
 
 ---
