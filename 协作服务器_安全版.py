@@ -2105,9 +2105,9 @@ window.CURRENT_USER = {user_info};
             self.send_json({'success': False, 'message': f'当前状态({old_status})不支持拒绝操作'})
             return
 
-        # --- 归档需求（仅 edit 权限）---
+        # --- 归档需求（提交者本人 或 edit 权限）---
         if path == '/api/requirement/archive':
-            if not self.require_permission('edit'):
+            if not self.require_auth():
                 return
             user = self.get_current_user()
             req_id = (data.get('id') or '').strip()
@@ -2121,6 +2121,10 @@ window.CURRENT_USER = {user_info};
                 return
             if req['status'] != 'accepted':
                 self.send_json({'success': False, 'message': '需求不是已受理状态，无法归档'})
+                return
+            # 权限检查：提交者本人 或 editor/admin
+            if req['submitter'] != user['username'] and 'edit' not in user.get('permissions', []):
+                self.send_json({'success': False, 'message': '权限不足，仅需求提交者或编辑者可归档'})
                 return
             req['status'] = 'archived'
             req['archive_time'] = datetime.now().isoformat()

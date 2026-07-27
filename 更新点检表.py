@@ -6279,8 +6279,8 @@ async function renderRequirements() {
           html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openAcceptRequirementModal(\\'' + escapeHtml(req.id) + '\\')">受理</button>';
           html += '<button class="btn btn-warning btn-xs" style="margin-right:4px" onclick="rejectRequirement(\\'' + escapeHtml(req.id) + '\\')">拒绝</button>';
         }
-        // 归档按钮：仅 editor/admin 可归档已受理的需求
-        if (isAccepted && canEditDirectly()) {
+        // 归档按钮：提交者本人 或 editor/admin 可归档已受理的需求
+        if (isAccepted && (isSubmitter || canEditDirectly())) {
           html += '<button class="btn btn-xs" style="margin-right:4px;background:#999;color:#fff" onclick="archiveRequirement(\\'' + escapeHtml(req.id) + '\\')">归档</button>';
         }
         // 回退按钮：仅 editor/admin 可回退已受理的需求到 submitted
