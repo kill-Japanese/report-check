@@ -2,9 +2,9 @@
   "requirements": [
     {
       "id": "REQ-20260727-001",
-      "name": "测试需求",
-      "source": "市场",
-      "description": "仅测试该功能",
+      "name": "[已删除]",
+      "source": "",
+      "description": "",
       "status": "deleted",
       "submitter": "xjq",
       "submit_time": "2026-07-27T00:21:57.938002",
@@ -17,10 +17,28 @@
       "archive_time": "",
       "archive_type": "",
       "auto_archive_deadline": ""
+    },
+    {
+      "id": "REQ-20260727-002",
+      "name": "测试需求-2",
+      "source": "市场",
+      "description": "测试需求功能",
+      "status": "submitted",
+      "submitter": "xjq-cs",
+      "submit_time": "2026-07-27T00:24:14.038195",
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": ""
     }
   ],
   "meta": {
     "last_id_date": "20260727",
-    "last_id_seq": 1
+    "last_id_seq": 2
   }
 }
