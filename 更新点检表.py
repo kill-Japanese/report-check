@@ -6334,6 +6334,10 @@ function openSubmitRequirementModal() {
           <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">需求开发点描述 <span style="color:red">*</span></label>
           <textarea id="reqDescription" rows="4" placeholder="请详细描述需求开发点" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
         </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:500">收件人 <span style="color:#999;font-weight:normal">(邮件发送用，可选)</span></label>
+          <input type="text" id="reqEmailTo" placeholder="填写收件人邮箱，多个用逗号分隔" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box">
+        </div>
       </div>
       <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
         <button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
@@ -6378,11 +6382,14 @@ async function submitRequirement() {
 function sendRequirementEmail() {
   const name = document.getElementById('reqName').value.trim();
   const description = document.getElementById('reqDescription').value.trim();
+  const to = document.getElementById('reqEmailTo').value.trim();
   if (!name) { alert('请先填写需求名称'); return; }
   if (!description) { alert('请先填写需求开发点描述'); return; }
-  const subject = encodeURIComponent(name);
-  const body = encodeURIComponent(description);
-  window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
+  let mailto = 'mailto:';
+  if (to) { mailto += encodeURIComponent(to); }
+  mailto += '?subject=' + encodeURIComponent(name);
+  mailto += '&body=' + encodeURIComponent(description);
+  window.location.href = mailto;
 }
 
 // 打开受理弹窗
