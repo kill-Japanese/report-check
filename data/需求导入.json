@@ -10,7 +10,9 @@
       "submit_time": "2026-07-27T05:40:52.432879",
       "acceptor": "",
       "accept_time": "",
-      "linked_projects": [],
+      "linked_projects": [
+        "非洲工装-曾翔"
+      ],
       "rejector": "xjq",
       "reject_time": "2026-07-27T05:54:48.728051",
       "reject_reason": "123",
@@ -53,10 +55,30 @@
       "archive_time": "",
       "archive_type": "",
       "auto_archive_deadline": ""
+    },
+    {
+      "id": "REQ-20260727-003",
+      "name": "测试需求看板",
+      "source": "研发内部需求",
+      "description": "测试看板",
+      "status": "accepted",
+      "submitter": "xjq",
+      "submit_time": "2026-07-27T06:11:03.529352",
+      "acceptor": "xjq",
+      "accept_time": "2026-07-27T06:12:24.099699",
+      "linked_projects": [
+        "测试看板"
+      ],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": "2026-07-30T06:12:24.099699"
     }
   ],
   "meta": {
     "last_id_date": "20260727",
-    "last_id_seq": 2
+    "last_id_seq": 3
   }
 }
