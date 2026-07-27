@@ -28,7 +28,9 @@
       "submit_time": "2026-07-27T00:24:14.038195",
       "acceptor": "",
       "accept_time": "",
-      "linked_projects": [],
+      "linked_projects": [
+        "测试看板"
+      ],
       "rejector": "",
       "reject_time": "",
       "reject_reason": "",
