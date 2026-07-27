@@ -1144,7 +1144,7 @@ async function deleteRequirement(reqId) {
 | `/workspace/更新点检表.py` | 修改 JS | `submitNewProject()` 弹窗关闭逻辑 |
 | `/workspace/更新点检表.py` | 修改 JS | `submitImport()` 弹窗关闭逻辑 |
 | `/workspace/更新点检表.py` | 新增 JS | `renderRequirements` 及全部 15 个需求操作函数 |
-| `/workspace/data/需求导入.json` | 新增文件 | 运行时自动生成，无需预创建 |
+| `/workspace/data/需求导入.json` | 新增文件 | 初始空文件已提交到 git，运行时自动更新 |
 
 ---
 
@@ -1157,3 +1157,9 @@ async function deleteRequirement(reqId) {
 3. **3 天自动归档**：以 `accept_time + 3天` 为期限，每小时检查一次。如果服务器在 3 天内未运行，重启后会立即检查并归档超期需求，不会遗漏。
 
 4. **删除与抹除**：当前设计将 `deleted` 状态的需求保留在 JSON 中但标记为已删除。如需真正抹除敏感信息，可在 `delete` 端点中将 `name`/`description`/`source` 等字段清空或替换为 `[已删除]`。
+
+5. **数据持久化与重新部署**：【已修复】`github_api_pull()` 原先只拉取 `CRITICAL_FILES`（2 个 xlsx），不拉取 `data/` 目录下的 JSON 文件，导致 Render 重新部署后 `需求导入.json` 和 `协作数据.json` 丢失。修复方案：
+   - `github_sync.py` 新增 `DATA_SYNC_FILES` 列表，包含 `data/需求导入.json`、`data/协作数据.json`、`data/users.json`
+   - `github_api_pull()` 增加对 `DATA_SYNC_FILES` 的拉取逻辑，确保重新部署时从 GitHub 恢复这些文件
+   - 初始空文件 `data/需求导入.json` 已提交到 git，确保 git 模式下也能正确拉取
+   - 推送链路无需修改：`github_api_push()` 已遍历 `data/` 目录推送所有 JSON 文件；`sync_to_github()` 和 `git_push()` 均使用 `git add data/`
