@@ -6327,6 +6327,7 @@ function openSubmitRequirementModal() {
             <option value="">请选择</option>
             <option value="市场">市场</option>
             <option value="客户">客户</option>
+            <option value="研发内部需求">研发内部需求</option>
           </select>
         </div>
         <div style="margin-bottom:14px">
@@ -6336,6 +6337,7 @@ function openSubmitRequirementModal() {
       </div>
       <div style="margin-top:16px;padding-top:15px;border-top:1px solid #eee;text-align:right">
         <button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        <button class="btn" onclick="sendRequirementEmail()" style="margin-left:8px;background:#f59e0b;color:#fff">邮件发送</button>
         <button class="btn btn-primary" onclick="submitRequirement()" style="margin-left:8px">提交</button>
       </div>
     </div>
@@ -6370,6 +6372,17 @@ async function submitRequirement() {
     console.error('[submitRequirement] 错误:', e);
     alert('提交出错: ' + (e.message || e));
   }
+}
+
+// 发送需求邮件（使用 mailto 打开默认邮件客户端）
+function sendRequirementEmail() {
+  const name = document.getElementById('reqName').value.trim();
+  const description = document.getElementById('reqDescription').value.trim();
+  if (!name) { alert('请先填写需求名称'); return; }
+  if (!description) { alert('请先填写需求开发点描述'); return; }
+  const subject = encodeURIComponent(name);
+  const body = encodeURIComponent(description);
+  window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
 }
 
 // 打开受理弹窗

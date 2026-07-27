@@ -93,7 +93,7 @@ flowchart TD
 触发：点击「提交新需求」按钮
 弹窗内容：
   - 需求名称 *（必填，文本输入）
-  - 需求来源 *（必填，下拉：市场/客户）
+  - 需求来源 *（必填，下拉：市场/客户/研发内部需求）
   - 需求开发点描述 *（必填，多行文本）
 提交后：
   - 系统生成需求ID（REQ-YYYYMMDD-NNN）
@@ -655,6 +655,7 @@ function openSubmitRequirementModal() {
           <option value="">请选择</option>
           <option value="市场">市场</option>
           <option value="客户">客户</option>
+          <option value="研发内部需求">研发内部需求</option>
         </select>
       </div>
       <div class="form-group">
@@ -663,6 +664,7 @@ function openSubmitRequirementModal() {
       </div>
       <div class="form-actions">
         <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        <button class="btn btn-warning" onclick="sendRequirementEmail()">邮件发送</button>
         <button class="btn btn-success" onclick="submitRequirement()">提交</button>
       </div>
     </div>
@@ -695,6 +697,15 @@ async function submitRequirement() {
   } catch (e) {
     alert('网络错误：' + e.message);
   }
+}
+
+// 发送需求邮件（使用 mailto 打开默认邮件客户端）
+function sendRequirementEmail() {
+  const name = document.getElementById('reqName').value.trim();
+  const desc = document.getElementById('reqDesc').value.trim();
+  if (!name) { alert('请先填写需求名称'); return; }
+  if (!desc) { alert('请先填写需求开发点描述'); return; }
+  window.location.href = 'mailto:?subject=' + encodeURIComponent(name) + '&body=' + encodeURIComponent(desc);
 }
 ```
 
