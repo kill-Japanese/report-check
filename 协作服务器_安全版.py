@@ -2419,7 +2419,6 @@ def main():
     # 需求自动归档定时任务（每小时检查一次）
     def _auto_archive_requirements():
         while True:
-            time.sleep(3600)
             try:
                 req_data = load_requirements()
                 now = datetime.now().isoformat()
@@ -2438,12 +2437,14 @@ def main():
                             )
                 if changed:
                     save_requirements(req_data)
+                    print(f'[自动归档] 已归档 {sum(1 for r in req_data["requirements"] if r.get("archive_type")=="auto" and r.get("archive_time")==now)} 条超期需求')
                     try:
                         auth.sync_to_github('需求自动归档')
                     except Exception:
                         pass
             except Exception as e:
                 print(f'[自动归档] 检查失败: {e}')
+            time.sleep(3600)
 
     threading.Thread(target=_auto_archive_requirements, daemon=True).start()
     print("📋 已启用需求自动归档（每小时检查，3天超时自动归档）")
