@@ -6298,7 +6298,7 @@ async function renderRequirements() {
         }
         // 被拒绝需求的编辑按钮：提交者本人可编辑
         if (isRejected && isSubmitter) {
-          html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openEditRequirementModal(\'' + escapeHtml(req.id) + '\')">编辑</button>';
+          html += '<button class="btn btn-primary btn-xs" style="margin-right:4px" onclick="openEditRequirementModal(\\'' + escapeHtml(req.id) + '\\')">编辑</button>';
         }
         // 删除按钮：canDelete 权限
         if (canDelete()) {
