@@ -5,24 +5,58 @@
       "name": "测试需求看板",
       "source": "研发内部需求",
       "description": "121345",
-      "status": "accepted",
+      "status": "deleted",
       "submitter": "xjq",
       "submit_time": "2026-07-27T05:40:52.432879",
-      "acceptor": "xjq",
-      "accept_time": "2026-07-27T05:41:16.125440",
-      "linked_projects": [
-        "测试看板"
-      ],
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
+      "rejector": "xjq",
+      "reject_time": "2026-07-27T05:54:48.728051",
+      "reject_reason": "123",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": ""
+    },
+    {
+      "id": "REQ-20260727-001",
+      "name": "测试需求看板",
+      "source": "研发内部需求",
+      "description": "研发内部测试功能需求",
+      "status": "submitted",
+      "submitter": "xjq",
+      "submit_time": "2026-07-27T05:52:01.700547",
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
       "rejector": "",
       "reject_time": "",
       "reject_reason": "",
       "archive_time": "",
       "archive_type": "",
-      "auto_archive_deadline": "2026-07-30T05:41:16.125440"
+      "auto_archive_deadline": ""
+    },
+    {
+      "id": "REQ-20260727-002",
+      "name": "[已删除]",
+      "source": "",
+      "description": "",
+      "status": "deleted",
+      "submitter": "xjq",
+      "submit_time": "2026-07-27T05:52:02.997188",
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": ""
     }
   ],
   "meta": {
     "last_id_date": "20260727",
-    "last_id_seq": 1
+    "last_id_seq": 2
   }
 }
