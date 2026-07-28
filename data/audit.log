@@ -170,24 +170,15 @@
 [2026-07-27 00:28:50] APPROVAL_APPROVE | 用户: xjq | OP-20260727-006: 审批通过，操作已生效: 归档项目成功; ID=217; （报表和同步正在后台执行）
 [2026-07-27 00:29:29] APPROVAL_APPROVE | 用户: xjq | OP-20260727-005: 审批通过，操作已生效: 归档项目成功; ID=216; （报表和同步正在后台执行）
 [2026-07-27 00:32:52] PROJECT_ADD | 用户: xjq | 新增成功(ID=219); （报表和同步正在后台执行）
-[2026-07-27 05:50:03] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
-[2026-07-27 05:50:22] LOGIN | 用户: xjq | 登录成功
-[2026-07-27 06:00:43] LOGIN | 用户: zky | 登录成功
-[2026-07-27 06:03:56] LOGIN | 用户: dajinyu | 登录成功
-[2026-07-27 06:04:13] LOGIN | 用户: xjq-cs | 登录成功
-[2026-07-27 06:04:45] APPROVAL_SUBMIT | 用户: xjq-cs | OP-20260727-017: archive
-[2026-07-27 06:05:08] LOGIN | 用户: xjq | 登录成功
-[2026-07-27 06:05:46] APPROVAL_APPROVE | 用户: xjq | OP-20260727-017: 审批通过，操作已生效: 归档项目成功; ID=149; （报表和同步正在后台执行）
-[2026-07-27 06:06:53] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
-[2026-07-27 06:12:31] LOGIN | 用户: ycx | 登录成功
-[2026-07-27 06:23:11] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-27 06:24:16] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-27 06:30:12] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-27 06:32:33] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-27 07:10:07] LOGIN | 用户: dajinyu | 登录成功
-[2026-07-27 07:12:01] LOGIN | 用户: dajinyu | 登录成功
-[2026-07-27 07:31:22] USER_CREATE | 用户: admin | 创建用户: wcw, 角色: viewer
-[2026-07-27 07:32:00] USER_CREATE | 用户: admin | 创建用户: yjx, 角色: viewer
-[2026-07-27 07:32:34] USER_CREATE | 用户: admin | 创建用户: shj, 角色: viewer
-[2026-07-27 07:32:53] USER_DELETE | 用户: admin | 删除用户: bugtest_3439
-[2026-07-27 07:33:49] USER_CREATE | 用户: admin | 创建用户: zgq, 角色: viewer
+[2026-07-27 05:39:12] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-07-27 05:39:29] LOGIN | 用户: xjq | 登录成功
+[2026-07-27 05:41:48] PROJECT_ARCHIVE | 用户: xjq | ID=218: 归档项目成功; ID=218; （报表和同步正在后台执行）
+[2026-07-27 05:41:52] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-27 08:36:42] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-07-27 08:37:03] LOGIN | 用户: xjq | 登录成功
+[2026-07-27 08:54:25] USER_UPDATE | 用户: admin | 更新用户: wyh, 字段: ['role', 'email']
+[2026-07-27 08:54:37] LOGIN | 用户: wyh | 登录成功
+[2026-07-27 09:34:44] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-27 09:58:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-28 01:29:48] LOGIN | 用户: xjq | 登录成功
+[2026-07-28 01:30:50] PROJECT_ARCHIVE | 用户: xjq | ID=63: 归档项目成功; ID=63; （报表和同步正在后台执行）
