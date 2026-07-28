@@ -182,3 +182,6 @@
 [2026-07-27 09:58:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
 [2026-07-28 01:29:48] LOGIN | 用户: xjq | 登录成功
 [2026-07-28 01:30:50] PROJECT_ARCHIVE | 用户: xjq | ID=63: 归档项目成功; ID=63; （报表和同步正在后台执行）
+[2026-07-28 01:31:01] PROJECT_ARCHIVE | 用户: xjq | ID=64: 项目ID=64 不存在
+[2026-07-28 01:31:01] PROJECT_ARCHIVE | 用户: xjq | ID=66: 项目ID=66 不存在
+[2026-07-28 01:31:02] PROJECT_ARCHIVE | 用户: xjq | ID=65: 归档项目成功; ID=65; （报表和同步正在后台执行）
