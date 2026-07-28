@@ -57,10 +57,46 @@
       "archive_time": "",
       "archive_type": "",
       "auto_archive_deadline": "2026-07-30T06:12:24.099699"
+    },
+    {
+      "id": "REQ-20260728-001",
+      "name": "EEPROM替代",
+      "source": "研发内部需求",
+      "description": "IIC读写测试需要固件协助，没有固件库，固件环境尚未未配置",
+      "status": "submitted",
+      "submitter": "yjx",
+      "submit_time": "2026-07-28T08:55:50.776553",
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": ""
+    },
+    {
+      "id": "REQ-20260728-002",
+      "name": "EEPROM替代",
+      "source": "研发内部需求",
+      "description": "IIC读写测试需要固件协助，没有固件库，固件环境尚未未配置",
+      "status": "submitted",
+      "submitter": "yjx",
+      "submit_time": "2026-07-28T08:55:54.218024",
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": ""
     }
   ],
   "meta": {
-    "last_id_date": "20260727",
-    "last_id_seq": 1
+    "last_id_date": "20260728",
+    "last_id_seq": 2
   }
 }
