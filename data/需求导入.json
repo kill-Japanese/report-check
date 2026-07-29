@@ -95,10 +95,28 @@
       "archive_time": "",
       "archive_type": "",
       "auto_archive_deadline": ""
+    },
+    {
+      "id": "REQ-20260729-001",
+      "name": "沙特温压传感器测试",
+      "source": "研发内部需求",
+      "description": "温压传感器接上水管漏水，需要结构协助整改结构",
+      "status": "submitted",
+      "submitter": "yjx",
+      "submit_time": "2026-07-29T01:29:05.480710",
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": ""
     }
   ],
   "meta": {
-    "last_id_date": "20260728",
-    "last_id_seq": 2
+    "last_id_date": "20260729",
+    "last_id_seq": 1
   }
 }
