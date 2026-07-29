@@ -2,10 +2,10 @@
   "requirements": [
     {
       "id": "REQ-20260727-001",
-      "name": "测试需求看板",
-      "source": "研发内部需求",
-      "description": "121345",
-      "status": "accepted",
+      "name": "[已删除]",
+      "source": "",
+      "description": "",
+      "status": "deleted",
       "submitter": "xjq",
       "submit_time": "2026-07-27T05:40:52.432879",
       "acceptor": "xjq",
@@ -16,8 +16,8 @@
       "rejector": "",
       "reject_time": "",
       "reject_reason": "",
-      "archive_time": "",
-      "archive_type": "",
+      "archive_time": "2026-07-29T00:58:22.082790",
+      "archive_type": "manual",
       "auto_archive_deadline": "2026-07-30T05:41:16.125440"
     },
     {
@@ -43,7 +43,7 @@
       "name": "测试需求看板",
       "source": "研发内部需求",
       "description": "测试看板",
-      "status": "accepted",
+      "status": "archived",
       "submitter": "xjq",
       "submit_time": "2026-07-27T06:11:03.529352",
       "acceptor": "xjq",
@@ -54,8 +54,8 @@
       "rejector": "",
       "reject_time": "",
       "reject_reason": "",
-      "archive_time": "",
-      "archive_type": "",
+      "archive_time": "2026-07-29T00:58:33.194622",
+      "archive_type": "manual",
       "auto_archive_deadline": "2026-07-30T06:12:24.099699"
     },
     {
@@ -63,25 +63,27 @@
       "name": "EEPROM替代",
       "source": "研发内部需求",
       "description": "IIC读写测试需要固件协助，没有固件库，固件环境尚未未配置",
-      "status": "submitted",
+      "status": "accepted",
       "submitter": "yjx",
       "submit_time": "2026-07-28T08:55:50.776553",
-      "acceptor": "",
-      "accept_time": "",
-      "linked_projects": [],
+      "acceptor": "xjq",
+      "accept_time": "2026-07-28T11:29:24.088613",
+      "linked_projects": [
+        "EEPROM驱动协助"
+      ],
       "rejector": "",
       "reject_time": "",
       "reject_reason": "",
       "archive_time": "",
       "archive_type": "",
-      "auto_archive_deadline": ""
+      "auto_archive_deadline": "2026-07-31T11:29:24.088613"
     },
     {
       "id": "REQ-20260728-002",
-      "name": "EEPROM替代",
-      "source": "研发内部需求",
-      "description": "IIC读写测试需要固件协助，没有固件库，固件环境尚未未配置",
-      "status": "submitted",
+      "name": "[已删除]",
+      "source": "",
+      "description": "",
+      "status": "deleted",
       "submitter": "yjx",
       "submit_time": "2026-07-28T08:55:54.218024",
       "acceptor": "",
