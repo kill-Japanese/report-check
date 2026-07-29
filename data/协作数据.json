@@ -2,88 +2,7 @@
   "localEdits": {},
   "notes": {},
   "checked": {},
-  "archived": {
-    "24": {
-      "time": "2026-07-29T00:57:48.596Z",
-      "project": "巴西LoRa-Walkby方案",
-      "fromExcel": true
-    },
-    "25": {
-      "time": "2026-07-24T08:08:37.613Z",
-      "project": "智利-NB",
-      "fromExcel": true
-    },
-    "31": {
-      "time": "2026-07-24T08:08:37.613Z",
-      "project": "哥伦比亚相关",
-      "fromExcel": true
-    },
-    "49": {
-      "time": "2026-07-24T08:08:37.613Z",
-      "project": "巴勒斯坦-LoRa",
-      "fromExcel": true
-    },
-    "50": {
-      "time": "2026-07-24T08:08:37.613Z",
-      "project": "印尼 BLE表",
-      "fromExcel": true
-    },
-    "63": {
-      "time": "2026-07-29T00:57:48.596Z",
-      "project": "应届生实习",
-      "fromExcel": true
-    },
-    "64": {
-      "time": "2026-07-29T00:57:48.596Z",
-      "project": "应届生实习",
-      "fromExcel": true
-    },
-    "65": {
-      "time": "2026-07-29T00:57:48.596Z",
-      "project": "应届生实习",
-      "fromExcel": true
-    },
-    "66": {
-      "time": "2026-07-29T00:57:48.597Z",
-      "project": "应届生实习",
-      "fromExcel": true
-    },
-    "147": {
-      "time": "2026-07-24T08:08:37.613Z",
-      "project": "巴勒斯坦超声户表二开",
-      "fromExcel": true
-    },
-    "148": {
-      "time": "2026-07-24T08:08:37.613Z",
-      "project": "巴勒斯坦超声户表二开",
-      "fromExcel": true
-    },
-    "149": {
-      "time": "2026-07-29T00:57:48.597Z",
-      "project": "巴勒斯坦超声户表二开",
-      "fromExcel": true
-    },
-    "165": {
-      "time": "2026-07-24T08:08:37.613Z",
-      "project": "欧洲短款表",
-      "fromExcel": true
-    },
-    "216": {
-      "time": "2026-07-29T00:57:48.597Z",
-      "project": "TEST demand",
-      "fromExcel": true
-    },
-    "217": {
-      "time": "2026-07-29T00:57:48.597Z",
-      "project": "TEST demand",
-      "fromExcel": true
-    },
-    "218": {
-      "time": "2026-07-29T00:57:48.597Z",
-      "project": "测试看板",
-      "fromExcel": true
-    }
-  },
+  "archived": {},
   "customEmails": {
     "刘璠": "fan.liu@hxgroup.com",
     "张丹": "dan.zhang@hxgroup.com",
@@ -102,5 +21,5 @@
   },
   "newProjects": [],
   "deletedIds": [],
-  "lastUpdate": "1785286768578"
+  "lastUpdate": "2026-07-29T00:59:43.961759"
 }
