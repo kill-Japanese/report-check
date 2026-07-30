@@ -368,3 +368,4 @@
 [2026-07-30 08:30:36] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
 [2026-07-30 08:31:07] LOGIN | 用户: tjs | 登录成功
 [2026-07-30 08:32:00] APPROVAL_APPROVE | 用户: tjs | OP-20260729-016: 审批失败: File is not a zip file
+[2026-07-30 08:32:08] APPROVAL_APPROVE | 用户: tjs | OP-20260729-016: 审批失败: Truncated file header
