@@ -358,3 +358,13 @@
 [2026-07-30 06:42:16] LOGIN | 用户: xjq | 登录成功
 [2026-07-30 06:44:54] APPROVAL_APPROVE | 用户: xjq | OP-20260729-017: 审批通过，操作已生效: 新增成功(ID=221); （报表和同步正在后台执行）
 [2026-07-30 06:45:42] APPROVAL_APPROVE | 用户: xjq | OP-20260729-018: 审批通过，操作已生效: 编辑项目成功; ID=32; （报表和同步正在后台执行）
+[2026-07-30 07:32:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 07:32:52] LOGIN | 用户: wyh | 登录成功
+[2026-07-30 07:52:36] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 07:52:49] LOGIN | 用户: wcw | 登录成功
+[2026-07-30 07:53:46] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 07:56:05] LOGIN | 用户: zgq | 登录成功
+[2026-07-30 08:10:36] LOGIN | 用户: lhl | 登录成功
+[2026-07-30 08:30:36] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 08:31:07] LOGIN | 用户: tjs | 登录成功
+[2026-07-30 08:32:00] APPROVAL_APPROVE | 用户: tjs | OP-20260729-016: 审批失败: File is not a zip file
