@@ -60,6 +60,35 @@ _projects_cache = None
 _projects_cache_mtime = None
 _cache_lock = threading.Lock()
 
+# 当前分支缓存（避免每次调用都执行git命令）
+_current_branch_cache = None
+
+
+def get_current_branch() -> str:
+    """获取当前git分支名（带缓存）
+    
+    优先从git命令获取，失败则返回'main'作为兜底。
+    修复：之前所有git操作硬编码为main分支，导致在feature分支部署时
+    数据会被main分支的旧版本覆盖。
+    """
+    global _current_branch_cache
+    if _current_branch_cache:
+        return _current_branch_cache
+    
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            _current_branch_cache = result.stdout.strip()
+            return _current_branch_cache
+    except:
+        pass
+    
+    _current_branch_cache = 'main'
+    return _current_branch_cache
+
 
 def invalidate_projects_cache():
     """清除项目数据缓存（写入Excel后必须调用）"""
@@ -188,8 +217,11 @@ def git_pull() -> tuple[bool, str]:
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
 
+        # 【修复】动态获取当前分支，不再硬编码main
+        current_branch = get_current_branch()
+        
         fetch = subprocess.run(
-            ['git', 'fetch', 'origin', 'main'],
+            ['git', 'fetch', 'origin', current_branch],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         if fetch.returncode != 0:
@@ -206,7 +238,7 @@ def git_pull() -> tuple[bool, str]:
         
         # 检查本地是否比远程新（有未推送的commit）
         ahead_check = subprocess.run(
-            ['git', 'rev-list', '--count', 'origin/main..HEAD'],
+            ['git', 'rev-list', '--count', f'origin/{current_branch}..HEAD'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=10
         )
         try:
@@ -226,7 +258,7 @@ def git_pull() -> tuple[bool, str]:
                 approval_backup = _backup_approval_flags()
                 # 推送失败，只拉取不覆盖关键文件
                 pull = subprocess.run(
-                    ['git', 'pull', 'origin', 'main', '--no-edit', '--no-commit'],
+                    ['git', 'pull', 'origin', current_branch, '--no-edit', '--no-commit'],
                     capture_output=True, text=True, cwd=BASE_DIR, timeout=30
                 )
                 # 如果有冲突，取消合并（保留本地版本）
@@ -248,7 +280,7 @@ def git_pull() -> tuple[bool, str]:
             # 本地文件已存在的情况下绝不覆盖！
             if not existed_before:
                 checkout = subprocess.run(
-                    ['git', 'checkout', 'origin/main', '--', f],
+                    ['git', 'checkout', f'origin/{current_branch}', '--', f],
                     capture_output=True, text=True, cwd=BASE_DIR, timeout=10
                 )
                 if checkout.returncode == 0 and os.path.exists(fpath):
@@ -268,7 +300,7 @@ def git_pull() -> tuple[bool, str]:
         data_json_backup = _backup_data_json_files()
         
         pull = subprocess.run(
-            ['git', 'pull', 'origin', 'main'],
+            ['git', 'pull', 'origin', current_branch],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         
@@ -687,6 +719,9 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
     
     # ============== 极速路径：直接 add + commit + push ==============
     try:
+        # 【修复】动态获取当前分支
+        current_branch = get_current_branch()
+        
         # 1. 检查是否有变更（只检查关键文件）
         result = subprocess.run(
             ['git', 'status', '--porcelain',
@@ -717,7 +752,7 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
         
         # 4. push（极速路径，不做 fetch）
         push_result = subprocess.run(
-            ['git', 'push', 'origin', 'main'],
+            ['git', 'push', 'origin', current_branch],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=15
         )
         if push_result.returncode == 0:
@@ -740,13 +775,13 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
         
         # fetch
         fetch = subprocess.run(
-            ['git', 'fetch', 'origin', 'main'],
+            ['git', 'fetch', 'origin', current_branch],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         
         # pull
         pull = subprocess.run(
-            ['git', 'pull', 'origin', 'main', '--no-edit'],
+            ['git', 'pull', 'origin', current_branch, '--no-edit'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         
@@ -784,7 +819,7 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
             return False, f'提交失败: {commit_result2.stderr[:200]}'
         
         push_result2 = subprocess.run(
-            ['git', 'push', 'origin', 'main'],
+            ['git', 'push', 'origin', current_branch],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         if push_result2.returncode == 0:
