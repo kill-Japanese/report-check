@@ -11,6 +11,7 @@ Excel 同步模块 - 以 GitHub Excel 为唯一数据源
 import os
 import sys
 import json
+import time
 import subprocess
 import threading
 from datetime import datetime
