@@ -2357,14 +2357,316 @@ window.CURRENT_USER = {user_info};
   var hasPerm = function(p) { return perms.indexOf(p) >= 0; };
 
   // 在页面加载后注入用户信息和权限控制
+  // ========== 修改密码弹窗样式 ==========
+  var pwdStyle = document.createElement('style');
+  pwdStyle.textContent =
+    '.pwd-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100000;display:flex;align-items:center;justify-content:center;}' +
+    '.pwd-modal{background:#fff;border-radius:12px;width:400px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.25);overflow:hidden;}' +
+    '.pwd-modal-header{padding:20px 24px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;}' +
+    '.pwd-modal-header h3{margin:0;font-size:17px;font-weight:600;color:#1a1d23;}' +
+    '.pwd-modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:#999;padding:0;width:28px;height:28px;line-height:1;}' +
+    '.pwd-modal-close:hover{color:#333;}' +
+    '.pwd-modal-body{padding:24px;}' +
+    '.pwd-form-group{margin-bottom:16px;}' +
+    '.pwd-form-group label{display:block;font-size:13px;font-weight:500;margin-bottom:6px;color:#333;}' +
+    '.pwd-form-group input{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box;font-family:inherit;transition:border-color .2s;}' +
+    '.pwd-form-group input:focus{outline:none;border-color:#667eea;box-shadow:0 0 0 3px rgba(102,126,234,0.1);}' +
+    '.pwd-form-group.error input{border-color:#ef4444;background:#fef2f2;}' +
+    '.pwd-form-group .pwd-hint{font-size:11px;color:#999;margin-top:4px;}' +
+    '.pwd-form-group.error .pwd-hint{color:#ef4444;}' +
+    '.pwd-strength{display:flex;gap:4px;margin-top:8px;}' +
+    '.pwd-strength .pwd-bar{flex:1;height:4px;background:#eee;border-radius:2px;transition:background .3s;}' +
+    '.pwd-strength.weak .pwd-bar:nth-child(1){background:#ef4444;}' +
+    '.pwd-strength.medium .pwd-bar:nth-child(-n+2){background:#f59e0b;}' +
+    '.pwd-strength.strong .pwd-bar:nth-child(-n+3){background:#10b981;}' +
+    '.pwd-strength-label{font-size:11px;color:#999;margin-top:4px;}' +
+    '.pwd-modal-footer{padding:16px 24px;border-top:1px solid #eee;display:flex;gap:10px;justify-content:flex-end;}' +
+    '.pwd-btn{padding:8px 20px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:inherit;transition:all .2s;}' +
+    '.pwd-btn-primary{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;}' +
+    '.pwd-btn-primary:hover{opacity:0.9;}' +
+    '.pwd-btn-primary:disabled{opacity:0.5;cursor:not-allowed;}' +
+    '.pwd-btn-secondary{background:#f3f4f6;color:#333;}' +
+    '.pwd-btn-secondary:hover{background:#e5e7eb;}' +
+    '.pwd-success-icon{width:56px;height:56px;background:#dcfce7;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 12px;}' +
+    '.pwd-success-text{text-align:center;font-size:15px;color:#1a1d23;margin-bottom:8px;}' +
+    '.pwd-success-sub{text-align:center;font-size:12px;color:#999;margin-bottom:16px;}' +
+    /* 用户下拉菜单 */
+    '.user-menu-wrap{position:relative;}' +
+    '.user-menu-trigger{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 8px;border-radius:6px;transition:background .2s;}' +
+    '.user-menu-trigger:hover{background:rgba(255,255,255,0.15);}' +
+    '.user-menu-avatar{width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;}' +
+    '.user-menu-arrow{font-size:10px;opacity:0.8;}' +
+    '.user-dropdown{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.15);min-width:180px;overflow:hidden;z-index:100001;}' +
+    '.user-dropdown .user-info-item{padding:12px 14px;border-bottom:1px solid #f0f0f0;}' +
+    '.user-dropdown .user-info-item .u-name{font-size:13px;font-weight:600;color:#1a1d23;}' +
+    '.user-dropdown .user-info-item .u-role{font-size:11px;color:#999;margin-top:2px;}' +
+    '.user-dropdown .u-item{padding:10px 14px;font-size:13px;color:#333;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .15s;}' +
+    '.user-dropdown .u-item:hover{background:#f5f5f5;}' +
+    '.user-dropdown .u-item.danger{color:#ef4444;}' +
+    '.user-dropdown .u-divider{height:1px;background:#f0f0f0;margin:4px 0;}';
+  document.head.appendChild(pwdStyle);
+
+  // 计算密码强度（0=弱, 1=中, 2=强）
+  function calcPwdStrength(pwd) {
+    if (!pwd || pwd.length < 8) return 0;
+    var score = 0;
+    if (pwd.length >= 8) score++;
+    if (pwd.length >= 10) score++;
+    if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score++;
+    if (/\d/.test(pwd)) score++;
+    if (/[^a-zA-Z0-9]/.test(pwd)) score++;
+    if (score <= 2) return 0; // 弱
+    if (score <= 3) return 1; // 中
+    return 2; // 强
+  }
+
+  function pwdStrengthLabel(level) {
+    return ['弱', '中', '强'][level] || '';
+  }
+
+  function pwdStrengthClass(level) {
+    return ['weak', 'medium', 'strong'][level] || '';
+  }
+
+  // 前端密码校验
+  function validatePwd(pwd, username) {
+    if (!pwd || pwd.length < 8) return {ok:false, msg:'密码长度至少 8 位'};
+    if (pwd.length > 64) return {ok:false, msg:'密码长度不能超过 64 位'};
+    if (!/[a-zA-Z]/.test(pwd) || !/\d/.test(pwd)) return {ok:false, msg:'密码需同时包含字母和数字'};
+    if (username && pwd.toLowerCase().indexOf(username.toLowerCase()) >= 0) return {ok:false, msg:'密码不能包含用户名'};
+    return {ok:true, msg:''};
+  }
+
+  // ========== 修改密码弹窗 ==========
+  window.showChangePwdModal = function(options) {
+    options = options || {};
+    var isForced = options.forced || false;
+    var username = window.CURRENT_USER ? window.CURRENT_USER.username : '';
+
+    var overlay = document.createElement('div');
+    overlay.className = 'pwd-modal-overlay';
+    overlay.innerHTML =
+      '<div class="pwd-modal">' +
+        '<div class="pwd-modal-header">' +
+          '<h3>' + (isForced ? '请修改初始密码' : '修改密码') + '</h3>' +
+          (isForced ? '' : '<button class="pwd-modal-close">&times;</button>') +
+        '</div>' +
+        '<div class="pwd-modal-body">' +
+          (isForced ? '<p style="font-size:12px;color:#f59e0b;margin:0 0 16px;padding:8px 12px;background:#fffbeb;border-radius:6px;">⚠️ 您的密码为初始密码，请修改后再使用系统</p>' : '') +
+          '<div class="pwd-form-group" id="pwdOldGroup">' +
+            '<label>当前密码</label>' +
+            '<input type="password" id="pwdOld" placeholder="请输入当前密码">' +
+            '<div class="pwd-hint"></div>' +
+          '</div>' +
+          '<div class="pwd-form-group" id="pwdNewGroup">' +
+            '<label>新密码</label>' +
+            '<input type="password" id="pwdNew" placeholder="请输入新密码（8-64位，字母+数字）">' +
+            '<div class="pwd-strength" id="pwdStrength"><div class="pwd-bar"></div><div class="pwd-bar"></div><div class="pwd-bar"></div></div>' +
+            '<div class="pwd-strength-label" id="pwdStrengthLabel"></div>' +
+            '<div class="pwd-hint">密码长度 8-64 位，需同时包含字母和数字</div>' +
+          '</div>' +
+          '<div class="pwd-form-group" id="pwdConfirmGroup">' +
+            '<label>确认新密码</label>' +
+            '<input type="password" id="pwdConfirm" placeholder="请再次输入新密码">' +
+            '<div class="pwd-hint"></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="pwd-modal-footer">' +
+          (isForced ? '' : '<button class="pwd-btn pwd-btn-secondary" id="pwdCancelBtn">取消</button>') +
+          '<button class="pwd-btn pwd-btn-primary" id="pwdSubmitBtn" disabled>确认修改</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+
+    var oldEl = overlay.querySelector('#pwdOld');
+    var newEl = overlay.querySelector('#pwdNew');
+    var confirmEl = overlay.querySelector('#pwdConfirm');
+    var submitBtn = overlay.querySelector('#pwdSubmitBtn');
+    var strengthEl = overlay.querySelector('#pwdStrength');
+    var strengthLabel = overlay.querySelector('#pwdStrengthLabel');
+    var oldGroup = overlay.querySelector('#pwdOldGroup');
+    var newGroup = overlay.querySelector('#pwdNewGroup');
+    var confirmGroup = overlay.querySelector('#pwdConfirmGroup');
+
+    function checkCanSubmit() {
+      var oldVal = oldEl.value;
+      var newVal = newEl.value;
+      var confirmVal = confirmEl.value;
+      var v = validatePwd(newVal, username);
+      var canSubmit = oldVal && newVal && confirmVal && v.ok && newVal === confirmVal && oldVal !== newVal;
+      submitBtn.disabled = !canSubmit;
+      return canSubmit;
+    }
+
+    function showError(group, hintEl, msg) {
+      group.classList.add('error');
+      hintEl.textContent = '✗ ' + msg;
+    }
+
+    function clearError(group, hintEl) {
+      group.classList.remove('error');
+      hintEl.textContent = '';
+    }
+
+    // 新密码实时校验
+    newEl.addEventListener('input', function() {
+      var val = newEl.value;
+      var level = calcPwdStrength(val);
+      strengthEl.className = 'pwd-strength ' + pwdStrengthClass(level);
+      strengthLabel.textContent = val ? '强度：' + pwdStrengthLabel(level) : '';
+
+      var v = validatePwd(val, username);
+      var hintEl = newGroup.querySelector('.pwd-hint');
+      if (val && !v.ok) {
+        showError(newGroup, hintEl, v.msg);
+      } else {
+        clearError(newGroup, hintEl);
+        if (val) {
+          hintEl.textContent = '密码长度 8-64 位，需同时包含字母和数字';
+        }
+      }
+      checkCanSubmit();
+    });
+
+    // 确认密码实时校验
+    confirmEl.addEventListener('input', function() {
+      var hintEl = confirmGroup.querySelector('.pwd-hint');
+      if (confirmEl.value && confirmEl.value !== newEl.value) {
+        showError(confirmGroup, hintEl, '两次输入的密码不一致');
+      } else {
+        clearError(confirmGroup, hintEl);
+      }
+      checkCanSubmit();
+    });
+
+    oldEl.addEventListener('input', checkCanSubmit);
+
+    // 关闭弹窗
+    function closeModal() {
+      overlay.remove();
+    }
+    if (!isForced) {
+      overlay.querySelector('.pwd-modal-close').addEventListener('click', closeModal);
+      overlay.querySelector('#pwdCancelBtn').addEventListener('click', closeModal);
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) closeModal();
+      });
+    }
+
+    // 提交
+    submitBtn.addEventListener('click', function() {
+      if (!checkCanSubmit()) return;
+      submitBtn.disabled = true;
+      submitBtn.textContent = '提交中...';
+
+      fetch('/api/change-password', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        credentials: 'include',
+        body: JSON.stringify({old_password: oldEl.value, new_password: newEl.value})
+      }).then(function(r){return r.json()}).then(function(d){
+        if (d.success) {
+          // 成功态
+          overlay.querySelector('.pwd-modal-body').innerHTML =
+            '<div class="pwd-success-icon">✓</div>' +
+            '<div class="pwd-success-text">密码修改成功</div>' +
+            '<div class="pwd-success-sub">' + (isForced ? '即将跳转到系统首页...' : '请妥善保管您的新密码') + '</div>' +
+            '<button class="pwd-btn pwd-btn-primary" style="width:100%;">好的</button>';
+          overlay.querySelector('.pwd-modal-footer').style.display = 'none';
+          overlay.querySelector('.pwd-btn-primary').addEventListener('click', function() {
+            location.reload();
+          });
+          // 强制改密时自动跳转
+          if (isForced) {
+            setTimeout(function(){ location.reload(); }, 2000);
+          }
+        } else {
+          submitBtn.disabled = false;
+          submitBtn.textContent = '确认修改';
+          // 根据错误信息定位到对应字段
+          var msg = d.message || '修改失败';
+          if (msg.indexOf('原密码') >= 0 || msg.indexOf('旧密码') >= 0) {
+            showError(oldGroup, oldGroup.querySelector('.pwd-hint'), msg);
+            oldEl.focus();
+          } else if (msg.indexOf('相同') >= 0) {
+            showError(newGroup, newGroup.querySelector('.pwd-hint'), msg);
+            newEl.focus();
+          } else {
+            showError(newGroup, newGroup.querySelector('.pwd-hint'), msg);
+            newEl.focus();
+          }
+        }
+      }).catch(function() {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '确认修改';
+        alert('网络错误，请稍后重试');
+      });
+    });
+
+    // 回车提交
+    [oldEl, newEl, confirmEl].forEach(function(el) {
+      el.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !submitBtn.disabled) {
+          submitBtn.click();
+        }
+      });
+    });
+
+    oldEl.focus();
+  };
+
+  // ========== 用户下拉菜单 ==========
+  window._toggleUserMenu = function() {
+    var existing = document.querySelector('.user-dropdown');
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    var menu = document.createElement('div');
+    menu.className = 'user-dropdown';
+    var items = '';
+    items += '<div class="user-info-item">';
+    items += '<div class="u-name">' + window.CURRENT_USER.username + '</div>';
+    items += '<div class="u-role">' + window.CURRENT_USER.role_name + '</div>';
+    items += '</div>';
+    items += '<div class="u-item" onclick="showChangePwdModal(); _toggleUserMenu();">🔑 修改密码</div>';
+    if (hasPerm('user_manage')) {
+      items += '<div class="u-divider"></div>';
+      items += '<div class="u-item" onclick="location.href=\'/admin/users\'">👥 用户管理</div>';
+    }
+    items += '<div class="u-divider"></div>';
+    items += '<div class="u-item danger" onclick="logout(); _toggleUserMenu();">🚪 退出登录</div>';
+    menu.innerHTML = items;
+
+    var trigger = document.querySelector('.user-menu-trigger');
+    if (trigger) {
+      trigger.appendChild(menu);
+    }
+
+    // 点击外部关闭
+    setTimeout(function() {
+      document.addEventListener('click', function closeMenu(e) {
+        if (!menu.contains(e.target) && !trigger.contains(e.target)) {
+          menu.remove();
+          document.removeEventListener('click', closeMenu);
+        }
+      });
+    }, 0);
+  };
+
   document.addEventListener('DOMContentLoaded', function() {
-    // 注入顶部用户信息栏
+    // 注入顶部用户信息栏（下拉菜单式）
     var authBar = document.createElement('div');
-    authBar.style.cssText = 'position:fixed;top:0;right:0;z-index:99999;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:8px 16px;border-radius:0 0 0 12px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,0.2);display:flex;gap:12px;align-items:center;';
+    authBar.style.cssText = 'position:fixed;top:0;right:0;z-index:99999;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:8px 16px;border-radius:0 0 0 12px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+    var avatarText = (window.CURRENT_USER.username || '?').substring(0,2).toUpperCase();
     authBar.innerHTML =
-      '<span>👤 <b>' + window.CURRENT_USER.username + '</b> (' + window.CURRENT_USER.role_name + ')</span>' +
-      (hasPerm('user_manage') ? '<a href="/admin/users" style="color:#fff;text-decoration:none;opacity:0.9">👥 用户管理</a>' : '') +
-      '<a href="javascript:;" onclick="logout()" style="color:#fff;text-decoration:none;opacity:0.9">🚪 退出</a>';
+      '<div class="user-menu-wrap">' +
+        '<div class="user-menu-trigger" onclick="_toggleUserMenu()">' +
+          '<div class="user-menu-avatar">' + avatarText + '</div>' +
+          '<span><b>' + window.CURRENT_USER.username + '</b></span>' +
+          '<span class="user-menu-arrow">▼</span>' +
+        '</div>' +
+      '</div>';
     document.body.appendChild(authBar);
 
     // 如果没有 edit 权限，禁用编辑
@@ -2378,32 +2680,15 @@ window.CURRENT_USER = {user_info};
     // 首次登录强制改密码
     if (window.CURRENT_USER.must_change_pwd) {
       setTimeout(function() {
-        showChangePwdModal();
+        showChangePwdModal({forced: true});
       }, 500);
     }
   });
 
   window.logout = function() {
     if (!confirm('确定退出登录？')) return;
-    fetch('/api/logout', {method:'POST'}).then(function() {
+    fetch('/api/logout', {method:'POST', credentials:'include'}).then(function() {
       location.reload();
-    });
-  };
-
-  window.showChangePwdModal = function() {
-    var oldPwd = prompt('请输入原密码：');
-    if (!oldPwd) return;
-    var newPwd = prompt('请输入新密码（至少6位）：');
-    if (!newPwd) return;
-    var confirmPwd = prompt('请再次输入新密码：');
-    if (newPwd !== confirmPwd) { alert('两次密码不一致'); return; }
-    fetch('/api/change-password', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({old_password: oldPwd, new_password: newPwd})
-    }).then(function(r){return r.json()}).then(function(d){
-      alert(d.message);
-      if (d.success) location.reload();
     });
   };
 })();

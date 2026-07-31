@@ -496,8 +496,11 @@ def create_user(username: str, password: str, role: str = 'viewer',
         return False, f'无效的角色: {role}'
     if len(username) < 3 or len(username) > 32:
         return False, '用户名长度需在 3-32 之间'
-    if len(password) < 6:
-        return False, '密码长度至少 6 位'
+    
+    # 密码强度校验
+    valid, msg = validate_password_strength(password, username)
+    if not valid:
+        return False, msg
 
     users = load_users()
     if username in users:
@@ -527,8 +530,9 @@ def update_user(username: str, **kwargs) -> tuple[bool, str]:
     if 'role' in kwargs and kwargs['role'] not in ROLES:
         return False, f'无效的角色: {kwargs["role"]}'
     if 'password' in kwargs:
-        if len(kwargs['password']) < 6:
-            return False, '密码长度至少 6 位'
+        valid, msg = validate_password_strength(kwargs['password'], username)
+        if not valid:
+            return False, msg
         users[username]['password'] = _hash_password(kwargs['password'])
         del kwargs['password']
 
@@ -556,6 +560,48 @@ def delete_user(username: str) -> tuple[bool, str]:
     return save_ok, save_msg if not save_ok else '用户删除成功'
 
 
+def validate_password_strength(password: str, username: str = '') -> tuple[bool, str]:
+    """验证密码强度
+    
+    规则：
+    - 最小长度 8 位
+    - 最大长度 64 位
+    - 必须包含字母和数字
+    - 不能与用户名相同或包含用户名
+    - 不能是常见弱密码
+    
+    Returns:
+        (是否通过, 提示信息)
+    """
+    if len(password) < 8:
+        return False, '密码长度至少 8 位'
+    if len(password) > 64:
+        return False, '密码长度不能超过 64 位'
+    
+    has_letter = any(c.isalpha() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    if not has_letter or not has_digit:
+        return False, '密码需同时包含字母和数字'
+    
+    if username:
+        if password.lower() == username.lower():
+            return False, '密码不能与用户名相同'
+        if username.lower() in password.lower():
+            return False, '密码不能包含用户名'
+    
+    # 常见弱密码黑名单
+    weak_passwords = {
+        'password', 'password1', 'password123', '123456', '12345678',
+        '123456789', 'qwerty', 'abc123', 'admin', 'admin123',
+        'letmein', 'welcome', 'monkey', 'dragon', 'master',
+        '111111', '000000', '888888', '666666',
+    }
+    if password.lower() in weak_passwords:
+        return False, '密码过于简单，请设置更复杂的密码'
+    
+    return True, '密码强度符合要求'
+
+
 def change_password(username: str, old_password: str, new_password: str) -> tuple[bool, str]:
     """用户修改自己的密码"""
     users = load_users()
@@ -564,8 +610,12 @@ def change_password(username: str, old_password: str, new_password: str) -> tupl
 
     if not _verify_password(old_password, users[username]['password']):
         return False, '原密码错误'
-    if len(new_password) < 6:
-        return False, '新密码长度至少 6 位'
+    
+    # 密码强度校验
+    valid, msg = validate_password_strength(new_password, username)
+    if not valid:
+        return False, msg
+    
     if old_password == new_password:
         return False, '新密码不能与原密码相同'
 
