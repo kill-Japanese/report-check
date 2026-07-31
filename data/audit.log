@@ -181,3 +181,4 @@
 [2026-07-31 11:42:10] LOGIN | 用户: ycx | 登录成功
 [2026-07-31 11:46:24] USER_CREATE | 用户: admin | 创建用户: zgj, 角色: viewer
 [2026-07-31 11:46:44] USER_CREATE | 用户: admin | 创建用户: wyh, 角色: viewer
+[2026-07-31 11:47:02] USER_CREATE | 用户: admin | 创建用户: shj, 角色: viewer
