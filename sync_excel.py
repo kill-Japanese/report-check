@@ -67,7 +67,12 @@ _current_branch_cache = None
 def get_current_branch() -> str:
     """获取当前git分支名（带缓存）
     
-    优先从git命令获取，失败则返回'main'作为兜底。
+    优先级：
+    1. 环境变量 GIT_BRANCH（部署平台如Render可通过环境变量指定）
+    2. git rev-parse --abbrev-ref HEAD（本地有.git目录时）
+    3. 环境变量 RENDER_GIT_BRANCH（Render平台专用）
+    4. 兜底返回'main'
+    
     修复：之前所有git操作硬编码为main分支，导致在feature分支部署时
     数据会被main分支的旧版本覆盖。
     """
@@ -75,17 +80,27 @@ def get_current_branch() -> str:
     if _current_branch_cache:
         return _current_branch_cache
     
+    # 1. 优先从环境变量获取（部署平台指定）
+    env_branch = os.environ.get('GIT_BRANCH', '') or os.environ.get('RENDER_GIT_BRANCH', '')
+    if env_branch and env_branch != 'HEAD':
+        _current_branch_cache = env_branch
+        return _current_branch_cache
+    
+    # 2. 从git命令获取
     try:
         result = subprocess.run(
             ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=5
         )
         if result.returncode == 0 and result.stdout.strip():
-            _current_branch_cache = result.stdout.strip()
-            return _current_branch_cache
+            branch = result.stdout.strip()
+            if branch != 'HEAD':  # 不是detached HEAD
+                _current_branch_cache = branch
+                return _current_branch_cache
     except:
         pass
     
+    # 3. 兜底
     _current_branch_cache = 'main'
     return _current_branch_cache
 
@@ -160,18 +175,20 @@ def ensure_git_repo() -> tuple[bool, str]:
             capture_output=True, cwd=BASE_DIR, timeout=5
         )
         
-        # 3. 确保分支名为 main
+        # 3. 检查当前分支（不再强制重命名为main，保持部署时的分支）
+        # 【修复】之前强制把所有分支重命名为main，导致在feature分支部署时
+        # 会从origin/main拉取旧数据覆盖当前分支的最新数据。
+        # 现在保持原分支名不变，git_pull/git_push会动态使用当前分支。
         branch = subprocess.run(
             ['git', 'branch', '--show-current'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=5
         )
         current_branch = branch.stdout.strip()
-        if current_branch and current_branch != 'main':
-            subprocess.run(
-                ['git', 'branch', '-M', 'main'],
-                capture_output=True, cwd=BASE_DIR, timeout=5
-            )
-            print(f"[Git] 已将分支 {current_branch} 重命名为 main")
+        if current_branch:
+            print(f"[Git] 当前分支: {current_branch}")
+        else:
+            #  detached HEAD 状态，尝试从环境变量或git log获取分支信息
+            print(f"[Git] 警告: 未检测到当前分支（可能是detached HEAD）")
         
         return True, 'Git 仓库就绪'
         
