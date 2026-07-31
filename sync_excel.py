@@ -171,7 +171,12 @@ def git_pull() -> tuple[bool, str]:
         try:
             from github_sync import github_api_pull
             print('[sync] git 不可用，使用 GitHub API 模式拉取')
-            return github_api_pull()
+            # 【关键修复7】API拉取前备份审批数据，防止被远程旧版本覆盖
+            approval_backup = _backup_approval_flags()
+            result = github_api_pull()
+            # 【关键修复7】API拉取后恢复审批数据
+            _restore_approval_flags(approval_backup)
+            return result
         except Exception as api_e:
             return False, f'git不可用且API拉取失败: {api_e}'
     
@@ -218,6 +223,7 @@ def git_pull() -> tuple[bool, str]:
                 # 【关键修复】git pull 前完整备份Excel，防止本地新增行被覆盖
                 excel_backup = _backup_excel_file()
                 archive_flags = _backup_archive_deleted_flags()
+                approval_backup = _backup_approval_flags()
                 # 推送失败，只拉取不覆盖关键文件
                 pull = subprocess.run(
                     ['git', 'pull', 'origin', 'main', '--no-edit', '--no-commit'],
@@ -229,6 +235,7 @@ def git_pull() -> tuple[bool, str]:
                 # 【关键修复】git pull 后恢复Excel和归档标志
                 _restore_excel_file(excel_backup)
                 _restore_archive_deleted_flags(archive_flags)
+                _restore_approval_flags(approval_backup)
                 return True, '（拉取成功；本地有未推送变更已保留）'
             print(f'[sync] 本地变更已推送: {push_msg[:60]}')
 
@@ -253,6 +260,9 @@ def git_pull() -> tuple[bool, str]:
         # 【关键修复2】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
         archive_flags = _backup_archive_deleted_flags()
         
+        # 【关键修复7】git pull 前备份审批数据，防止待审批状态被远程旧版本覆盖
+        approval_backup = _backup_approval_flags()
+        
         # 【关键修复5】git pull 前备份 data/ 目录下的 JSON 文件
         # 防止需求状态（如已归档）被远程旧版本覆盖回待受理
         data_json_backup = _backup_data_json_files()
@@ -267,6 +277,9 @@ def git_pull() -> tuple[bool, str]:
         
         # 【关键修复4】git pull 后恢复归档/删除标志
         _restore_archive_deleted_flags(archive_flags)
+        
+        # 【关键修复7】git pull 后恢复审批数据
+        _restore_approval_flags(approval_backup)
         
         # 【关键修复6】git pull 后恢复 data/ 目录下的 JSON 文件
         # 确保 需求导入.json 等文件的状态不被远程覆盖
@@ -338,6 +351,100 @@ def _restore_archive_deleted_flags(flags: dict):
         wb.close()
     except Exception as e:
         print(f'[sync] 恢复归档标志失败: {e}')
+
+
+def _backup_approval_flags() -> dict:
+    """备份 Excel 中的审批状态列数据（防止 git pull 覆盖待审批数据）
+    
+    备份任务计划表的 X/Y/Z/AA 四列（审批状态、申请人、变更内容、操作类型），
+    以及操作记录 Sheet 中状态为 pending 的记录。
+    
+    返回: {
+        'sheet_approvals': {row_num: {'status': ..., 'submitter': ..., 'detail': ..., 'op_type': ...}},
+        'pending_ops': [op_record, ...]
+    }
+    """
+    from openpyxl import load_workbook
+    result = {'sheet_approvals': {}, 'pending_ops': []}
+    try:
+        if not os.path.exists(EXCEL_FILE):
+            return result
+        wb = load_workbook(EXCEL_FILE, data_only=True)
+        ws = wb['任务计划表']
+        
+        # Part 1: 备份任务计划表审批列
+        for row_num in range(4, ws.max_row + 1):
+            status = ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1).value or ''
+            if status and str(status).strip():
+                submitter = ws.cell(row=row_num, column=COL_APPROVAL_SUBMITTER + 1).value or ''
+                detail = ws.cell(row=row_num, column=COL_APPROVAL_DETAIL + 1).value or ''
+                op_type = ws.cell(row=row_num, column=COL_APPROVAL_TYPE + 1).value or ''
+                result['sheet_approvals'][row_num] = {
+                    'status': str(status).strip(),
+                    'submitter': str(submitter) if submitter else '',
+                    'detail': str(detail) if detail else '',
+                    'op_type': str(op_type) if op_type else '',
+                }
+        wb.close()
+        
+        # Part 2: 备份操作记录中 pending 状态的记录
+        all_ops = _load_operations_sheet()
+        pending_ops = [o for o in all_ops if o.get('状态') == 'pending']
+        result['pending_ops'] = pending_ops
+        
+        print(f'[sync] 已备份 {len(result["sheet_approvals"])} 个行的审批列数据，{len(pending_ops)} 条待审批操作记录')
+    except Exception as e:
+        print(f'[sync] 备份审批数据失败: {e}')
+    return result
+
+
+def _restore_approval_flags(backup: dict):
+    """恢复审批状态列数据到 Excel（git pull 后调用）"""
+    if not backup or not isinstance(backup, dict):
+        return
+    from openpyxl import load_workbook
+    try:
+        if not os.path.exists(EXCEL_FILE):
+            return
+        wb = load_workbook(EXCEL_FILE)
+        ws = wb['任务计划表']
+        
+        restored_sheet = 0
+        # Part 1: 恢复任务计划表审批列
+        sheet_approvals = backup.get('sheet_approvals', {})
+        for row_num, data in sheet_approvals.items():
+            if row_num > ws.max_row:
+                continue
+            current_status = ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1).value or ''
+            # 只有当前审批列为空（被远程覆盖）时才恢复
+            if not current_status or not str(current_status).strip():
+                ws.cell(row=row_num, column=COL_APPROVAL_STATUS + 1, value=data.get('status', ''))
+                ws.cell(row=row_num, column=COL_APPROVAL_SUBMITTER + 1, value=data.get('submitter', ''))
+                ws.cell(row=row_num, column=COL_APPROVAL_DETAIL + 1, value=data.get('detail', ''))
+                ws.cell(row=row_num, column=COL_APPROVAL_TYPE + 1, value=data.get('op_type', ''))
+                restored_sheet += 1
+        
+        if restored_sheet > 0:
+            print(f'[sync] 已恢复 {restored_sheet} 个行的审批列数据')
+        
+        wb.save(EXCEL_FILE)
+        wb.close()
+        
+        # Part 2: 恢复操作记录中 pending 状态的记录（如果被覆盖了）
+        pending_ops = backup.get('pending_ops', [])
+        if pending_ops:
+            current_ops = _load_operations_sheet()
+            current_op_ids = set(o.get('操作ID', '') for o in current_ops)
+            missing_pending = [o for o in pending_ops if o.get('操作ID', '') not in current_op_ids]
+            if missing_pending:
+                for op in missing_pending:
+                    _append_operation(op)
+                print(f'[sync] 已恢复 {len(missing_pending)} 条待审批操作记录')
+        
+        if restored_sheet > 0 or missing_pending:
+            invalidate_projects_cache()
+    except Exception as e:
+        print(f'[sync] 恢复审批数据失败: {e}')
 
 
 def _backup_excel_file() -> str:
@@ -628,6 +735,9 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
         # 【关键修复2】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
         archive_flags = _backup_archive_deleted_flags()
         
+        # 【关键修复7】git pull 前备份审批数据，防止待审批状态被远程旧版本覆盖
+        approval_backup = _backup_approval_flags()
+        
         # fetch
         fetch = subprocess.run(
             ['git', 'fetch', 'origin', 'main'],
@@ -645,6 +755,10 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
         
         # 【关键修复4】git pull 后恢复归档/删除标志
         _restore_archive_deleted_flags(archive_flags)
+        
+        # 【关键修复7】git pull 后恢复审批数据
+        _restore_approval_flags(approval_backup)
+        
         if pull.returncode != 0:
             # 有冲突，回退到 GitHub API
             print(f'[sync] pull失败，回退到GitHub API: {pull.stderr[:80]}')
