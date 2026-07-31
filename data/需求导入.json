@@ -2,10 +2,10 @@
   "requirements": [
     {
       "id": "REQ-20260727-001",
-      "name": "[已删除]",
-      "source": "",
-      "description": "",
-      "status": "deleted",
+      "name": "测试需求看板",
+      "source": "研发内部需求",
+      "description": "121345",
+      "status": "archived",
       "submitter": "xjq",
       "submit_time": "2026-07-27T05:40:52.432879",
       "acceptor": "xjq",
@@ -16,8 +16,8 @@
       "rejector": "",
       "reject_time": "",
       "reject_reason": "",
-      "archive_time": "2026-07-29T00:58:22.082790",
-      "archive_type": "manual",
+      "archive_time": "2026-07-31T11:19:50.124340",
+      "archive_type": "auto",
       "auto_archive_deadline": "2026-07-30T05:41:16.125440"
     },
     {
@@ -116,7 +116,7 @@
     }
   ],
   "meta": {
-    "last_id_date": "20260729",
+    "last_id_date": "20260727",
     "last_id_seq": 1
   }
 }
