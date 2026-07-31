@@ -174,3 +174,198 @@
 [2026-07-27 05:39:29] LOGIN | 用户: xjq | 登录成功
 [2026-07-27 05:41:48] PROJECT_ARCHIVE | 用户: xjq | ID=218: 归档项目成功; ID=218; （报表和同步正在后台执行）
 [2026-07-27 05:41:52] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-27 08:36:42] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-07-27 08:37:03] LOGIN | 用户: xjq | 登录成功
+[2026-07-27 08:54:25] USER_UPDATE | 用户: admin | 更新用户: wyh, 字段: ['role', 'email']
+[2026-07-27 08:54:37] LOGIN | 用户: wyh | 登录成功
+[2026-07-27 09:34:44] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-27 09:58:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-28 01:29:48] LOGIN | 用户: xjq | 登录成功
+[2026-07-28 01:30:50] PROJECT_ARCHIVE | 用户: xjq | ID=63: 归档项目成功; ID=63; （报表和同步正在后台执行）
+[2026-07-28 01:31:01] PROJECT_ARCHIVE | 用户: xjq | ID=64: 项目ID=64 不存在
+[2026-07-28 01:31:01] PROJECT_ARCHIVE | 用户: xjq | ID=66: 项目ID=66 不存在
+[2026-07-28 01:31:02] PROJECT_ARCHIVE | 用户: xjq | ID=65: 归档项目成功; ID=65; （报表和同步正在后台执行）
+[2026-07-28 01:31:08] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-28 01:31:45] LOGIN | 用户: wyh | 登录成功
+[2026-07-28 01:33:50] APPROVAL_SUBMIT | 用户: wyh | : edit
+[2026-07-28 01:33:51] APPROVAL_SUBMIT | 用户: wyh | OP-20260728-001: edit
+[2026-07-28 01:34:33] APPROVAL_SUBMIT | 用户: wyh | OP-20260728-002: edit
+[2026-07-28 02:02:23] APPROVAL_SUBMIT | 用户: wyh | OP-20260728-003: edit
+[2026-07-28 02:03:11] APPROVAL_SUBMIT | 用户: wyh | OP-20260728-004: edit
+[2026-07-28 03:03:51] LOGIN | 用户: wcw | 登录成功
+[2026-07-28 03:04:38] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-28 04:09:28] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-28 07:06:56] LOGIN | 用户: zgq | 登录成功
+[2026-07-28 07:06:56] LOGIN | 用户: zgq | 登录成功
+[2026-07-28 07:27:04] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-28 07:29:05] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-28 07:34:30] APPROVAL_APPROVE | 用户: xjq | OP-20260728-004: 审批失败: File is not a zip file
+[2026-07-28 07:34:35] APPROVAL_APPROVE | 用户: xjq | OP-20260728-003: 审批通过，操作已生效: 编辑项目成功; ID=52; （报表和同步正在后台执行）
+[2026-07-28 07:35:12] APPROVAL_APPROVE | 用户: xjq | OP-20260728-004: 审批通过，操作已生效: 编辑项目成功; ID=53; （报表和同步正在后台执行）
+[2026-07-28 07:35:39] APPROVAL_APPROVE | 用户: xjq | OP-20260728-004: 该操作状态不是待审批: approved
+[2026-07-28 07:35:53] PROJECT_ARCHIVE | 用户: xjq | ID=64: 归档项目成功; ID=64; （报表和同步正在后台执行）
+[2026-07-28 07:35:58] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-28 07:36:07] PROJECT_ARCHIVE | 用户: xjq | ID=66: 归档项目成功; ID=66; （报表和同步正在后台执行）
+[2026-07-28 07:36:14] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-28 07:36:39] PROJECT_EDIT | 用户: xjq | ID=13: 编辑项目成功; ID=13; （报表和同步正在后台执行）
+[2026-07-28 07:36:45] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-28 07:50:36] PROJECT_DELETE | 用户: xjq | ID=29: 删除项目成功; ID=29; （报表和同步正在后台执行）
+[2026-07-28 07:50:42] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-28 08:34:11] LOGIN | 用户: shj | 登录成功
+[2026-07-28 08:49:19] LOGIN | 用户: yjx | 登录成功
+[2026-07-28 09:50:16] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-28 11:29:10] PROJECT_ADD | 用户: xjq | 新增成功(ID=220); （报表和同步正在后台执行）
+[2026-07-28 12:10:07] LOGIN | 用户: dajinyu | 登录成功
+[2026-07-28 13:06:28] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-28 18:44:55] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 00:56:30] LOGIN | 用户: xjq | 登录成功
+[2026-07-29 00:57:45] LOGIN | 用户: ycx | 登录成功
+[2026-07-29 00:58:42] PROJECT_EDIT | 用户: ycx | ID=7: 项目ID=7 不存在
+[2026-07-29 00:58:43] PROJECT_EDIT | 用户: ycx | ID=7: 编辑项目成功; ID=7; （报表和同步正在后台执行）
+[2026-07-29 00:58:47] DATA_SYNC | 用户: ycx | 数据同步更新
+[2026-07-29 00:59:28] PROJECT_EDIT | 用户: ycx | ID=9: 编辑项目成功; ID=9; （报表和同步正在后台执行）
+[2026-07-29 00:59:32] DATA_SYNC | 用户: ycx | 数据同步更新
+[2026-07-29 00:59:50] PROJECT_EDIT | 用户: ycx | ID=9: 编辑项目成功; ID=9; （报表和同步正在后台执行）
+[2026-07-29 00:59:54] DATA_SYNC | 用户: ycx | 数据同步更新
+[2026-07-29 01:08:06] LOGIN | 用户: mwh | 登录成功
+[2026-07-29 01:08:38] APPROVAL_SUBMIT | 用户: mwh | OP-20260729-004: edit
+[2026-07-29 01:08:55] APPROVAL_SUBMIT | 用户: mwh | OP-20260729-005: edit
+[2026-07-29 01:10:05] PROJECT_DELETE | 用户: xjq | ID=219: 删除项目成功; ID=219; （报表和同步正在后台执行）
+[2026-07-29 01:10:14] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-07-29 01:11:05] APPROVAL_APPROVE | 用户: xjq | OP-20260729-004: 审批通过，操作已生效: 编辑项目成功; ID=150; （报表和同步正在后台执行）
+[2026-07-29 01:11:55] LOGIN | 用户: wcw | 登录成功
+[2026-07-29 01:11:56] LOGIN | 用户: wcw | 登录成功
+[2026-07-29 01:11:59] LOGIN | 用户: wcw | 登录成功
+[2026-07-29 01:11:59] LOGIN | 用户: wcw | 登录成功
+[2026-07-29 01:12:13] APPROVAL_APPROVE | 用户: xjq | OP-20260729-005: 审批通过，操作已生效: 编辑项目成功; ID=151; （报表和同步正在后台执行）
+[2026-07-29 01:12:35] APPROVAL_APPROVE | 用户: xjq | OP-20260729-005: 该操作状态不是待审批: approved
+[2026-07-29 01:16:28] APPROVAL_SUBMIT | 用户: wcw | OP-20260729-006: edit
+[2026-07-29 01:17:53] APPROVAL_SUBMIT | 用户: wcw | OP-20260729-007: edit
+[2026-07-29 01:19:44] APPROVAL_APPROVE | 用户: xjq | OP-20260729-006: 审批通过，操作已生效: 编辑项目成功; ID=28; （报表和同步正在后台执行）
+[2026-07-29 01:20:48] APPROVAL_APPROVE | 用户: xjq | OP-20260729-007: 审批通过，操作已生效: 编辑项目成功; ID=32; （报表和同步正在后台执行）
+[2026-07-29 01:24:42] LOGIN | 用户: wyh | 登录成功
+[2026-07-29 01:26:50] APPROVAL_SUBMIT | 用户: wyh | OP-20260729-008: edit
+[2026-07-29 01:28:09] LOGIN | 用户: zky | 登录成功
+[2026-07-29 01:29:00] APPROVAL_SUBMIT | 用户: wyh | : edit
+[2026-07-29 01:29:00] APPROVAL_SUBMIT | 用户: wyh | OP-20260729-009: edit
+[2026-07-29 01:29:09] LOGIN | 用户: zgq | 登录成功
+[2026-07-29 01:29:10] LOGIN | 用户: zgq | 登录成功
+[2026-07-29 01:29:11] LOGIN | 用户: zgq | 登录成功
+[2026-07-29 01:29:12] LOGIN | 用户: zgq | 登录成功
+[2026-07-29 01:29:12] LOGIN | 用户: zgq | 登录成功
+[2026-07-29 01:29:12] LOGIN | 用户: zgq | 登录成功
+[2026-07-29 01:29:12] LOGIN | 用户: zgq | 登录成功
+[2026-07-29 01:29:22] LOGIN | 用户: shj | 登录成功
+[2026-07-29 01:29:26] LOGIN | 用户: shj | 登录成功
+[2026-07-29 01:29:31] APPROVAL_SUBMIT | 用户: wyh | OP-20260729-011: edit
+[2026-07-29 01:30:30] APPROVAL_SUBMIT | 用户: shj | : add项目:蓝牙工装
+[2026-07-29 01:30:30] APPROVAL_SUBMIT | 用户: shj | : add项目:蓝牙工装
+[2026-07-29 01:30:31] APPROVAL_SUBMIT | 用户: shj | OP-20260729-012: add项目:蓝牙工装
+[2026-07-29 01:31:42] APPROVAL_SUBMIT | 用户: shj | OP-20260729-013: add项目:物料替换
+[2026-07-29 01:31:42] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 01:32:00] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 01:32:17] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 01:32:27] APPROVAL_SUBMIT | 用户: shj | : add项目:物料替换
+[2026-07-29 01:32:27] APPROVAL_SUBMIT | 用户: shj | : add项目:物料替换
+[2026-07-29 01:32:27] APPROVAL_SUBMIT | 用户: shj | : add项目:物料替换
+[2026-07-29 01:32:28] APPROVAL_SUBMIT | 用户: shj | OP-20260729-014: add项目:物料替换
+[2026-07-29 01:33:49] APPROVAL_APPROVE | 用户: xjq | OP-20260729-008: 审批通过，操作已生效: 编辑项目成功; ID=70; （报表和同步正在后台执行）
+[2026-07-29 01:34:15] LOGIN | 用户: tjs | 登录成功
+[2026-07-29 01:34:16] LOGIN | 用户: tjs | 登录成功
+[2026-07-29 01:34:16] LOGIN | 用户: tjs | 登录成功
+[2026-07-29 01:34:16] LOGIN | 用户: tjs | 登录成功
+[2026-07-29 01:34:17] LOGIN | 用户: tjs | 登录成功
+[2026-07-29 01:34:17] LOGIN | 用户: tjs | 登录成功
+[2026-07-29 01:34:17] LOGIN | 用户: tjs | 登录成功
+[2026-07-29 01:34:17] LOGIN | 用户: tjs | 登录成功
+[2026-07-29 01:37:15] APPROVAL_APPROVE | 用户: xjq | OP-20260729-011: 审批通过，操作已生效: 编辑项目成功; ID=72; （报表和同步正在后台执行）
+[2026-07-29 01:45:25] LOGIN | 用户: tjs | 登录成功
+[2026-07-29 01:47:11] APPROVAL_REJECT | 用户: tjs | OP-20260729-014: 审批已拒绝
+[2026-07-29 01:47:27] APPROVAL_REJECT | 用户: tjs | OP-20260729-013: 审批已拒绝
+[2026-07-29 01:47:49] APPROVAL_REJECT | 用户: tjs | OP-20260729-012: 审批已拒绝
+[2026-07-29 01:48:41] APPROVAL_SUBMIT | 用户: shj | OP-20260729-015: add项目:蓝牙工装
+[2026-07-29 01:49:09] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 01:49:12] SESSION_CLEANUP | 用户: system | 清理了 3 个过期 Session
+[2026-07-29 01:49:14] SESSION_CLEANUP | 用户: system | 清理了 2 个过期 Session
+[2026-07-29 01:49:26] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 01:49:28] APPROVAL_SUBMIT | 用户: shj | OP-20260729-016: add项目:物料替换
+[2026-07-29 01:54:16] SESSION_CLEANUP | 用户: system | 清理了 7 个过期 Session
+[2026-07-29 01:56:25] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 02:10:05] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 02:30:45] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 02:38:33] LOGIN | 用户: xjq | 登录成功
+[2026-07-29 02:53:59] LOGIN | 用户: dajinyu | 登录成功
+[2026-07-29 03:14:13] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 03:46:20] LOGIN | 用户: zgq | 登录成功
+[2026-07-29 03:58:45] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 04:09:42] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 04:54:13] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 05:57:14] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 06:29:46] LOGIN | 用户: dajinyu | 登录成功
+[2026-07-29 06:32:44] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 07:26:06] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:01:52] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:08:19] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:10:47] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:24:25] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:25:01] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:26:06] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:27:01] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:28:33] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:28:33] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:30:52] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:35:13] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:35:23] LOGIN | 用户: mwh | 登录成功
+[2026-07-29 08:36:12] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:39:34] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 08:41:21] APPROVAL_SUBMIT | 用户: mwh | : add项目:巴勒斯坦超声户表二开
+[2026-07-29 08:41:21] APPROVAL_SUBMIT | 用户: mwh | OP-20260729-017: add项目:巴勒斯坦超声户表二开
+[2026-07-29 08:44:29] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:45:04] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:46:09] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:47:04] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:48:34] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:55:14] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:56:12] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 08:59:34] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 09:01:37] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 09:02:27] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 09:21:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 09:22:29] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 09:27:12] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 09:31:47] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 09:42:12] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 09:42:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 09:47:12] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 09:51:53] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 10:30:55] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 11:45:46] LOGIN | 用户: lhl | 登录成功
+[2026-07-29 12:53:33] LOGIN | 用户: wcw | 登录成功
+[2026-07-29 13:06:06] APPROVAL_SUBMIT | 用户: wcw | OP-20260729-018: edit
+[2026-07-29 13:16:55] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 14:08:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-29 15:11:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 00:24:16] LOGIN | 用户: wyh | 登录成功
+[2026-07-30 00:36:50] LOGIN | 用户: zky | 登录成功
+[2026-07-30 00:44:46] LOGIN | 用户: zgq | 登录成功
+[2026-07-30 00:45:37] LOGIN | 用户: wcw | 登录成功
+[2026-07-30 01:00:56] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 01:44:25] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 03:03:40] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 03:09:59] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 04:11:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 05:17:43] LOGIN | 用户: wcw | 登录成功
+[2026-07-30 06:42:16] LOGIN | 用户: xjq | 登录成功
+[2026-07-30 06:44:54] APPROVAL_APPROVE | 用户: xjq | OP-20260729-017: 审批通过，操作已生效: 新增成功(ID=221); （报表和同步正在后台执行）
+[2026-07-30 06:45:42] APPROVAL_APPROVE | 用户: xjq | OP-20260729-018: 审批通过，操作已生效: 编辑项目成功; ID=32; （报表和同步正在后台执行）
+[2026-07-30 07:32:43] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 07:32:52] LOGIN | 用户: wyh | 登录成功
+[2026-07-30 07:52:36] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 07:52:49] LOGIN | 用户: wcw | 登录成功
+[2026-07-30 07:53:46] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 07:56:05] LOGIN | 用户: zgq | 登录成功
+[2026-07-30 08:10:36] LOGIN | 用户: lhl | 登录成功
+[2026-07-30 08:30:36] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-30 08:31:07] LOGIN | 用户: tjs | 登录成功
+[2026-07-30 08:32:00] APPROVAL_APPROVE | 用户: tjs | OP-20260729-016: 审批失败: File is not a zip file
+[2026-07-30 08:32:08] APPROVAL_APPROVE | 用户: tjs | OP-20260729-016: 审批失败: Truncated file header

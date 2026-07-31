@@ -2,10 +2,10 @@
   "requirements": [
     {
       "id": "REQ-20260727-001",
-      "name": "测试需求看板",
-      "source": "研发内部需求",
-      "description": "121345",
-      "status": "accepted",
+      "name": "[已删除]",
+      "source": "",
+      "description": "",
+      "status": "deleted",
       "submitter": "xjq",
       "submit_time": "2026-07-27T05:40:52.432879",
       "acceptor": "xjq",
@@ -16,13 +16,107 @@
       "rejector": "",
       "reject_time": "",
       "reject_reason": "",
+      "archive_time": "2026-07-29T00:58:22.082790",
+      "archive_type": "manual",
+      "auto_archive_deadline": "2026-07-30T05:41:16.125440"
+    },
+    {
+      "id": "REQ-20260727-002",
+      "name": "[已删除]",
+      "source": "",
+      "description": "",
+      "status": "deleted",
+      "submitter": "xjq",
+      "submit_time": "2026-07-27T05:52:02.997188",
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
       "archive_time": "",
       "archive_type": "",
-      "auto_archive_deadline": "2026-07-30T05:41:16.125440"
+      "auto_archive_deadline": ""
+    },
+    {
+      "id": "REQ-20260727-003",
+      "name": "[已删除]",
+      "source": "",
+      "description": "",
+      "status": "deleted",
+      "submitter": "xjq",
+      "submit_time": "2026-07-27T06:11:03.529352",
+      "acceptor": "xjq",
+      "accept_time": "2026-07-27T06:12:24.099699",
+      "linked_projects": [
+        "测试看板"
+      ],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "2026-07-29T00:58:33.194622",
+      "archive_type": "manual",
+      "auto_archive_deadline": "2026-07-30T06:12:24.099699"
+    },
+    {
+      "id": "REQ-20260728-001",
+      "name": "EEPROM替代",
+      "source": "研发内部需求",
+      "description": "IIC读写测试需要固件协助，没有固件库，固件环境尚未未配置",
+      "status": "accepted",
+      "submitter": "yjx",
+      "submit_time": "2026-07-28T08:55:50.776553",
+      "acceptor": "xjq",
+      "accept_time": "2026-07-28T11:29:24.088613",
+      "linked_projects": [
+        "EEPROM驱动协助"
+      ],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": "2026-07-31T11:29:24.088613"
+    },
+    {
+      "id": "REQ-20260728-002",
+      "name": "[已删除]",
+      "source": "",
+      "description": "",
+      "status": "deleted",
+      "submitter": "yjx",
+      "submit_time": "2026-07-28T08:55:54.218024",
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": ""
+    },
+    {
+      "id": "REQ-20260729-001",
+      "name": "沙特温压传感器测试",
+      "source": "研发内部需求",
+      "description": "温压传感器接上水管漏水，需要结构协助整改结构",
+      "status": "submitted",
+      "submitter": "yjx",
+      "submit_time": "2026-07-29T01:29:05.480710",
+      "acceptor": "",
+      "accept_time": "",
+      "linked_projects": [],
+      "rejector": "",
+      "reject_time": "",
+      "reject_reason": "",
+      "archive_time": "",
+      "archive_type": "",
+      "auto_archive_deadline": ""
     }
   ],
   "meta": {
-    "last_id_date": "20260727",
+    "last_id_date": "20260729",
     "last_id_seq": 1
   }
 }
