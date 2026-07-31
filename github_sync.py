@@ -372,19 +372,20 @@ def github_api_pull() -> tuple[bool, str]:
     restored = []
     import tempfile
     
-    # 【修复】动态获取当前分支，不再硬编码main
+    # 【架构优化】数据与代码分离：数据文件统一从 DATA_BRANCH 拉取
+    # 不管当前部署在哪个分支，数据都从 main 分支获取，确保数据一致性
     try:
-        from sync_excel import get_current_branch
-        current_branch = get_current_branch()
+        from sync_excel import DATA_BRANCH
+        data_branch = DATA_BRANCH
     except:
-        current_branch = 'main'
+        data_branch = 'main'
     
     # 1. 拉取关键 Excel 文件
     for filename in CRITICAL_FILES:
         filepath = os.path.join(BASE_DIR, filename)
         existed_before = os.path.exists(filepath)
         
-        ok, content, _ = github_api_get_file(filename, branch=current_branch)
+        ok, content, _ = github_api_get_file(filename, branch=data_branch)
         if ok and content:
             # 【关键修复】对于Excel文件，比较行数后再决定是否覆盖
             if filename.endswith('.xlsx') and existed_before:
@@ -425,7 +426,7 @@ def github_api_pull() -> tuple[bool, str]:
         filepath = os.path.join(BASE_DIR, data_file)
         existed_before = os.path.exists(filepath)
         
-        ok, content, _ = github_api_get_file(data_file, branch=current_branch)
+        ok, content, _ = github_api_get_file(data_file, branch=data_branch)
         if ok and content:
             if existed_before:
                 # 文件已存在：使用智能合并，避免覆盖本地新状态
@@ -559,12 +560,13 @@ def github_api_push(message: str = '同步数据') -> tuple[bool, str]:
     if not files_to_push:
         return True, '无变更需要推送'
     
-    # 【修复】动态获取当前分支，不再硬编码main
+    # 【架构优化】数据与代码分离：数据文件统一推送到 DATA_BRANCH
+    # 不管当前部署在哪个分支，数据都推送到 main 分支，确保数据一致性
     try:
-        from sync_excel import get_current_branch
-        current_branch = get_current_branch()
+        from sync_excel import DATA_BRANCH
+        data_branch = DATA_BRANCH
     except:
-        current_branch = 'main'
+        data_branch = 'main'
     
     # 获取配置（只用一次）
     token, owner, repo = _get_github_config()
@@ -577,7 +579,7 @@ def github_api_push(message: str = '同步数据') -> tuple[bool, str]:
         path_in_repo, local_path, content = item
         try:
             # 先获取远程 SHA
-            ok, _, remote_sha = github_api_get_file(path_in_repo, branch=current_branch)
+            ok, _, remote_sha = github_api_get_file(path_in_repo, branch=data_branch)
             if ok and remote_sha:
                 # 比较内容（远程 SHA = git SHA，需要用 git blob 方式计算）
                 local_git_sha = _git_sha1(content)
@@ -585,7 +587,7 @@ def github_api_push(message: str = '同步数据') -> tuple[bool, str]:
                     return (True, path_in_repo, '未变更，跳过')
             
             # 有变更，推送
-            ok, msg = github_api_push_file(path_in_repo, content, message, sha=remote_sha if ok else '', branch=current_branch)
+            ok, msg = github_api_push_file(path_in_repo, content, message, sha=remote_sha if ok else '', branch=data_branch)
             return (ok, path_in_repo, msg if not ok else '已推送')
         except Exception as e:
             return (False, path_in_repo, str(e))

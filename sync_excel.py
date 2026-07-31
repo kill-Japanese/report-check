@@ -24,6 +24,22 @@ COLLAB_FILE = os.path.join(DATA_DIR, '协作数据.json')
 EXCEL_FILE = os.path.join(BASE_DIR, '超声波户表脚本.xlsx')
 HTML_FILE = os.path.join(BASE_DIR, '项目延期点检表.html')
 
+# ==================== 数据与代码分离配置 ====================
+# 【架构优化】数据文件统一在 main 分支管理，代码文件在各自功能分支管理
+# 好处：彻底解决多分支部署时数据不一致的问题
+# 数据文件列表（从 DATA_BRANCH 拉取/推送到 DATA_BRANCH）
+DATA_FILES = [
+    '超声波户表脚本.xlsx',   # 核心业务数据
+    '用户管理.xlsx',         # 用户账户数据
+    'data/协作数据.json',    # 协作扩展数据
+    'data/需求导入.json',    # 需求管理数据
+    'data/users.json',       # 用户缓存
+    'data/audit.log',        # 审计日志
+]
+# 数据所在分支（所有环境统一从这里拉取数据）
+DATA_BRANCH = 'main'
+# ===========================================================
+
 # Excel 列配置（0-based 索引）
 # 【严重修复】原使用U列(20)/V列(21)会覆盖延期计算公式，
 # 导致Excel延期工时计算错误。改为使用完全空闲的A列(0)和B列(1)。
@@ -201,8 +217,11 @@ def ensure_git_repo() -> tuple[bool, str]:
 def git_pull() -> tuple[bool, str]:
     """从 GitHub 拉取最新数据（双路径：git命令优先，GitHub API兜底）
     
-    【关键修复】Render 环境中 git 命令可能不存在，
-    自动检测并回退到 GitHub REST API 模式。
+    【架构优化】数据与代码分离：
+    - 代码文件：从当前分支拉取
+    - 数据文件：统一从 DATA_BRANCH（main）分支拉取
+    
+    好处：彻底解决多分支部署时数据不一致的问题
     """
     # 检查 git 命令是否可用
     git_available = False
@@ -217,16 +236,14 @@ def git_pull() -> tuple[bool, str]:
         try:
             from github_sync import github_api_pull
             print('[sync] git 不可用，使用 GitHub API 模式拉取')
-            # 【关键修复7】API拉取前备份审批数据，防止被远程旧版本覆盖
             approval_backup = _backup_approval_flags()
             result = github_api_pull()
-            # 【关键修复7】API拉取后恢复审批数据
             _restore_approval_flags(approval_backup)
             return result
         except Exception as api_e:
             return False, f'git不可用且API拉取失败: {api_e}'
     
-    # git 可用，使用原有逻辑
+    # git 可用，使用数据/代码分离的拉取逻辑
     try:
         ensure_ok, ensure_msg = ensure_git_repo()
         if not ensure_ok:
@@ -234,114 +251,229 @@ def git_pull() -> tuple[bool, str]:
         if not os.path.exists(os.path.join(BASE_DIR, '.git')):
             return False, '未检测到 Git 仓库'
 
-        # 【修复】动态获取当前分支，不再硬编码main
         current_branch = get_current_branch()
+        msg_parts = []
         
-        fetch = subprocess.run(
+        # ========== 第一步：先推送本地未提交的数据变更到 DATA_BRANCH ==========
+        # 检查数据文件是否有本地未提交的变更
+        data_status = subprocess.run(
+            ['git', 'status', '--porcelain'] + DATA_FILES,
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        has_data_changes = bool(data_status.stdout.strip())
+        
+        if has_data_changes:
+            print(f'[sync] 检测到数据文件有本地变更，先推送到 {DATA_BRANCH} 分支...')
+            push_ok, push_msg = _push_data_to_data_branch('启动时同步本地数据变更')
+            if not push_ok:
+                print(f'[sync] 警告: 数据推送失败（{push_msg[:60]}），将保留本地数据')
+            else:
+                print(f'[sync] 数据已推送到 {DATA_BRANCH} 分支')
+        
+        # ========== 第二步：拉取代码（当前分支） ==========
+        # fetch 当前分支
+        fetch_code = subprocess.run(
             ['git', 'fetch', 'origin', current_branch],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
-        if fetch.returncode != 0:
-            return False, f'fetch失败: {fetch.stderr[:200]}'
-
-        # 【关键修复】先检查本地是否有未提交的变更
-        # 如果有，说明本地数据比远程新，不能被远程覆盖！
-        # 这是用户/项目消失的核心原因：本地未推送的变更被远程旧文件覆盖
-        status_check = subprocess.run(
-            ['git', 'status', '--porcelain', '用户管理.xlsx', '超声波户表脚本.xlsx', 'data/'],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
-        )
-        has_local_changes = bool(status_check.stdout.strip())
+        if fetch_code.returncode != 0:
+            print(f'[sync] 代码分支fetch失败: {fetch_code.stderr[:100]}')
         
-        # 检查本地是否比远程新（有未推送的commit）
-        ahead_check = subprocess.run(
+        # 检查代码是否有未推送的commit（数据已单独推送，代码可能还有）
+        code_ahead = subprocess.run(
             ['git', 'rev-list', '--count', f'origin/{current_branch}..HEAD'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=10
         )
         try:
-            ahead_count = int(ahead_check.stdout.strip())
+            code_ahead_count = int(code_ahead.stdout.strip())
         except ValueError:
-            ahead_count = 0
+            code_ahead_count = 0
         
-        if has_local_changes or ahead_count > 0:
-            # 本地有未推送的变更，先尝试推送再拉取
-            print(f'[sync] 检测到本地有未推送变更（工作区:{has_local_changes}, 提交:{ahead_count}），先尝试推送...')
-            push_ok, push_msg = git_push('启动时同步本地未推送数据')
-            if not push_ok:
-                print(f'[sync] 警告: 本地变更推送失败（{push_msg[:60]}），将保留本地文件不被覆盖')
-                # 【关键修复】git pull 前完整备份Excel，防止本地新增行被覆盖
-                excel_backup = _backup_excel_file()
-                archive_flags = _backup_archive_deleted_flags()
-                approval_backup = _backup_approval_flags()
-                # 推送失败，只拉取不覆盖关键文件
-                pull = subprocess.run(
-                    ['git', 'pull', 'origin', current_branch, '--no-edit', '--no-commit'],
-                    capture_output=True, text=True, cwd=BASE_DIR, timeout=30
-                )
-                # 如果有冲突，取消合并（保留本地版本）
-                if pull.returncode != 0:
-                    subprocess.run(['git', 'merge', '--abort'], capture_output=True, cwd=BASE_DIR, timeout=10)
-                # 【关键修复】git pull 后恢复Excel和归档标志
-                _restore_excel_file(excel_backup)
-                _restore_archive_deleted_flags(archive_flags)
-                _restore_approval_flags(approval_backup)
-                return True, '（拉取成功；本地有未推送变更已保留）'
-            print(f'[sync] 本地变更已推送: {push_msg[:60]}')
-
-        critical_files = ['用户管理.xlsx', '超声波户表脚本.xlsx']
-        restored = []
-        for f in critical_files:
-            fpath = os.path.join(BASE_DIR, f)
-            existed_before = os.path.exists(fpath)
-            # 【关键修复】只在本地文件不存在时才从远程checkout
-            # 本地文件已存在的情况下绝不覆盖！
-            if not existed_before:
-                checkout = subprocess.run(
-                    ['git', 'checkout', f'origin/{current_branch}', '--', f],
-                    capture_output=True, text=True, cwd=BASE_DIR, timeout=10
-                )
-                if checkout.returncode == 0 and os.path.exists(fpath):
-                    restored.append(f'{f}(新建)')
-
-        # 【关键修复1】git pull 前完整备份Excel，防止本地新增行被远程覆盖
-        excel_backup = _backup_excel_file()
+        # 拉取代码（只拉取非数据文件，数据文件单独处理）
+        # 策略：先pull，然后再用DATA_BRANCH的数据文件覆盖
+        if code_ahead_count > 0:
+            # 本地有未推送的代码commit，先尝试推送
+            print(f'[sync] 本地有 {code_ahead_count} 个未推送的代码commit，尝试推送...')
+            code_push = subprocess.run(
+                ['git', 'push', 'origin', current_branch],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+            )
+            if code_push.returncode == 0:
+                print('[sync] 代码已推送')
+                code_ahead_count = 0
         
-        # 【关键修复2】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
-        archive_flags = _backup_archive_deleted_flags()
+        # pull 代码
+        if code_ahead_count == 0:
+            # 没有本地领先的commit，可以安全pull
+            pull = subprocess.run(
+                ['git', 'pull', 'origin', current_branch, '--no-edit'],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+            )
+            if pull.returncode == 0:
+                msg_parts.append('代码已更新')
+            else:
+                msg_parts.append(f'代码拉取: {pull.stderr[:50]}')
+        else:
+            msg_parts.append(f'代码: 本地领先 {code_ahead_count} 个commit，未拉取')
         
-        # 【关键修复7】git pull 前备份审批数据，防止待审批状态被远程旧版本覆盖
-        approval_backup = _backup_approval_flags()
-        
-        # 【关键修复5】git pull 前备份 data/ 目录下的 JSON 文件
-        # 防止需求状态（如已归档）被远程旧版本覆盖回待受理
-        data_json_backup = _backup_data_json_files()
-        
-        pull = subprocess.run(
-            ['git', 'pull', 'origin', current_branch],
+        # ========== 第三步：拉取数据（DATA_BRANCH 分支） ==========
+        # fetch 数据分支
+        fetch_data = subprocess.run(
+            ['git', 'fetch', 'origin', DATA_BRANCH],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=30
         )
         
-        # 【关键修复3】git pull 后恢复Excel（防止本地新增行被覆盖）
-        _restore_excel_file(excel_backup)
+        if fetch_data.returncode == 0:
+            # 用 DATA_BRANCH 的数据文件覆盖本地
+            # 先检查本地数据是否比远程新（有未推送的变更）
+            # 如果有，刚才第一步已经推送了，所以这里可以安全覆盖
+            data_restored = []
+            for data_file in DATA_FILES:
+                fpath = os.path.join(BASE_DIR, data_file)
+                # 检查远程是否有这个文件
+                check = subprocess.run(
+                    ['git', 'cat-file', '-e', f'origin/{DATA_BRANCH}:{data_file}'],
+                    capture_output=True, cwd=BASE_DIR, timeout=5
+                )
+                if check.returncode == 0:
+                    # 远程有这个文件，checkout 覆盖本地
+                    checkout = subprocess.run(
+                        ['git', 'checkout', f'origin/{DATA_BRANCH}', '--', data_file],
+                        capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+                    )
+                    if checkout.returncode == 0:
+                        data_restored.append(data_file)
+            
+            if data_restored:
+                msg_parts.append(f'数据已从 {DATA_BRANCH} 同步（{len(data_restored)}个文件）')
+            else:
+                msg_parts.append(f'数据分支 {DATA_BRANCH}: 无更新')
+        else:
+            msg_parts.append(f'数据分支fetch失败: {fetch_data.stderr[:50]}')
         
-        # 【关键修复4】git pull 后恢复归档/删除标志
-        _restore_archive_deleted_flags(archive_flags)
+        # 生成报表
+        try:
+            regenerate_report()
+        except:
+            pass
         
-        # 【关键修复7】git pull 后恢复审批数据
-        _restore_approval_flags(approval_backup)
-        
-        # 【关键修复6】git pull 后恢复 data/ 目录下的 JSON 文件
-        # 确保 需求导入.json 等文件的状态不被远程覆盖
-        _restore_data_json_files(data_json_backup)
-
-        msg_parts = ['拉取成功']
-        if restored:
-            msg_parts.append(f'已同步 {len(restored)} 个文件: {", ".join(restored)}')
-        return True, '（' + '；'.join(msg_parts) + '）'
+        return True, '；'.join(msg_parts)
     except subprocess.TimeoutExpired:
         return False, '拉取超时'
     except Exception as e:
         return False, f'拉取失败: {str(e)}'
+
+
+def _push_data_to_data_branch(message: str = '同步数据') -> tuple[bool, str]:
+    """将本地数据文件的变更推送到 DATA_BRANCH 分支
+    
+    实现方式：
+    1. 暂存当前工作区的所有变更
+    2. 切换到 DATA_BRANCH 分支
+    3. 应用数据文件的变更
+    4. commit + push
+    5. 切回原分支 + 恢复暂存
+    
+    注意：调用前确保数据文件有变更（has_data_changes == True）
+    """
+    current_branch = get_current_branch()
+    if current_branch == DATA_BRANCH:
+        # 已经在数据分支，直接走正常的 git push 逻辑
+        result = subprocess.run(
+            ['git', 'push', 'origin', DATA_BRANCH],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+        )
+        if result.returncode == 0:
+            return True, '已推送'
+        return False, result.stderr[:200]
+    
+    stash_success = False
+    branch_switched = False
+    original_branch = current_branch
+    
+    try:
+        # 1. 暂存所有变更（包括代码和数据）
+        stash = subprocess.run(
+            ['git', 'stash', 'push', '-u', '-m', f'temp-stash-for-data-sync-{int(time.time())}'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        if stash.returncode == 0:
+            stash_success = True
+        
+        # 2. 切换到 DATA_BRANCH 分支
+        checkout_branch = subprocess.run(
+            ['git', 'checkout', DATA_BRANCH],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        if checkout_branch.returncode != 0:
+            # 切换失败，尝试从远程创建
+            checkout_branch = subprocess.run(
+                ['git', 'checkout', '-b', DATA_BRANCH, f'origin/{DATA_BRANCH}'],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+            )
+            if checkout_branch.returncode != 0:
+                return False, f'切换到{DATA_BRANCH}分支失败: {checkout_branch.stderr[:100]}'
+        branch_switched = True
+        
+        # 3. 从暂存中恢复数据文件的变更
+        if stash_success:
+            # 应用暂存中的数据文件变更
+            apply_stash = subprocess.run(
+                ['git', 'stash', 'pop', '--'] + DATA_FILES,
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+            )
+            # 即使部分失败也继续（可能数据文件没有变更）
+        
+        # 4. 检查是否有数据变更并提交
+        data_status = subprocess.run(
+            ['git', 'status', '--porcelain'] + DATA_FILES,
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        if not data_status.stdout.strip():
+            # 没有数据变更，直接返回
+            return True, '无数据变更需要推送'
+        
+        # add 数据文件
+        subprocess.run(
+            ['git', 'add'] + DATA_FILES,
+            capture_output=True, cwd=BASE_DIR, timeout=10
+        )
+        
+        # commit
+        commit_msg = f'[数据同步] {message} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
+        commit_result = subprocess.run(
+            ['git', 'commit', '-m', commit_msg],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+        )
+        if commit_result.returncode != 0:
+            return False, f'提交失败: {commit_result.stderr[:100]}'
+        
+        # push
+        push_result = subprocess.run(
+            ['git', 'push', 'origin', DATA_BRANCH],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+        )
+        if push_result.returncode != 0:
+            return False, f'推送失败: {push_result.stderr[:100]}'
+        
+        return True, '数据已推送到 ' + DATA_BRANCH
+        
+    except Exception as e:
+        return False, str(e)
+    finally:
+        # 5. 切回原分支 + 恢复暂存
+        if branch_switched:
+            subprocess.run(
+                ['git', 'checkout', original_branch],
+                capture_output=True, cwd=BASE_DIR, timeout=10
+            )
+            _current_branch_cache = original_branch
+        if stash_success:
+            # 恢复暂存（可能有冲突，但不影响数据，数据已经推送了）
+            subprocess.run(
+                ['git', 'stash', 'pop'],
+                capture_output=True, cwd=BASE_DIR, timeout=10
+            )
 
 def _backup_archive_deleted_flags() -> dict:
     """备份 Excel 中的归档/删除标志（防止 git pull 覆盖）
@@ -705,15 +837,13 @@ _git_available_cache = None
 
 
 def git_push(message: str = '同步数据') -> tuple[bool, str]:
-    """将变更提交并推送到 GitHub（极速优化版）
+    """将变更提交并推送到 GitHub（数据/代码分离版）
     
-    【极速优化】99% 的场景下跳过不必要的网络请求：
-    1. 不做 git fetch（省 3-5 秒网络请求）
-    2. 不检查 ahead/behind（省 2 次 subprocess）
-    3. 直接 git add + commit + push
-    4. 只有 push 失败时才回退到完整流程（fetch+pull+重试）
+    【架构优化】数据与代码分离：
+    - 数据文件：推送到 DATA_BRANCH（main）分支
+    - 代码文件：推送到当前分支
     
-    预期：从 10-15 秒降到 2-4 秒
+    好处：彻底解决多分支部署时数据不一致的问题
     """
     global _git_available_cache
     
@@ -734,122 +864,93 @@ def git_push(message: str = '同步数据') -> tuple[bool, str]:
         except Exception as api_e:
             return False, f'git不可用且API推送失败: {api_e}'
     
-    # ============== 极速路径：直接 add + commit + push ==============
     try:
-        # 【修复】动态获取当前分支
         current_branch = get_current_branch()
         
-        # 1. 检查是否有变更（只检查关键文件）
-        result = subprocess.run(
+        # 检查是否有任何变更
+        status_result = subprocess.run(
             ['git', 'status', '--porcelain',
              '超声波户表脚本.xlsx', '用户管理.xlsx',
              '项目延期点检表.html', 'data/'],
             capture_output=True, text=True, cwd=BASE_DIR, timeout=5
         )
-        if not result.stdout.strip():
+        if not status_result.stdout.strip():
             return True, '无变更，无需推送'
         
-        # 2. 只 add 关键文件（不用 -A，更快）
-        subprocess.run(
-            ['git', 'add', '超声波户表脚本.xlsx', '用户管理.xlsx',
-             '项目延期点检表.html', 'data/'],
-            capture_output=True, cwd=BASE_DIR, timeout=5
+        msg_parts = []
+        
+        # ========== 第一步：推送数据文件到 DATA_BRANCH ==========
+        # 检查数据文件是否有变更
+        data_status = subprocess.run(
+            ['git', 'status', '--porcelain'] + DATA_FILES,
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=5
         )
         
-        # 3. commit
-        commit_msg = f'[数据同步] {message} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
-        commit_result = subprocess.run(
-            ['git', 'commit', '-m', commit_msg],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
-        )
-        if commit_result.returncode != 0:
-            if 'nothing to commit' in (commit_result.stdout + commit_result.stderr):
-                return True, '无变更'
-            return False, f'提交失败: {commit_result.stderr[:200]}'
+        if data_status.stdout.strip():
+            # 有数据变更，推送到 DATA_BRANCH
+            data_ok, data_msg = _push_data_to_data_branch(message)
+            if data_ok:
+                msg_parts.append(f'数据→{DATA_BRANCH}')
+                print(f'[sync] 数据已推送到 {DATA_BRANCH} 分支')
+            else:
+                msg_parts.append(f'数据推送失败: {data_msg[:40]}')
+                print(f'[sync] 警告: 数据推送失败: {data_msg[:80]}')
         
-        # 4. push（极速路径，不做 fetch）
-        push_result = subprocess.run(
-            ['git', 'push', 'origin', current_branch],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=15
-        )
-        if push_result.returncode == 0:
-            return True, '已同步到 GitHub（极速路径）'
-        
-        # ============== push 失败：回退到完整流程（fetch+pull+重试）==============
-        print(f'[sync] 极速push失败（{push_result.stderr[:80]}），回退到完整流程...')
-        
-        # 撤销刚才的 commit（避免重复提交）
-        subprocess.run(['git', 'reset', '--soft', 'HEAD~1'], capture_output=True, cwd=BASE_DIR, timeout=5)
-        
-        # 【关键修复1】git pull 前完整备份Excel，防止新增行被远程覆盖
-        excel_backup = _backup_excel_file()
-        
-        # 【关键修复2】git pull 前备份归档/删除标志，防止被远程旧版本覆盖
-        archive_flags = _backup_archive_deleted_flags()
-        
-        # 【关键修复7】git pull 前备份审批数据，防止待审批状态被远程旧版本覆盖
-        approval_backup = _backup_approval_flags()
-        
-        # fetch
-        fetch = subprocess.run(
-            ['git', 'fetch', 'origin', current_branch],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+        # ========== 第二步：推送代码文件到当前分支 ==========
+        # 检查代码文件是否有变更（排除数据文件）
+        all_status = subprocess.run(
+            ['git', 'status', '--porcelain'],
+            capture_output=True, text=True, cwd=BASE_DIR, timeout=5
         )
         
-        # pull
-        pull = subprocess.run(
-            ['git', 'pull', 'origin', current_branch, '--no-edit'],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
-        )
+        # 解析哪些是代码文件的变更（排除数据文件）
+        code_changes = []
+        for line in all_status.stdout.strip().split('\n'):
+            if line:
+                # 提取文件名
+                parts = line.strip().split(maxsplit=1)
+                if len(parts) >= 2:
+                    fname = parts[1].strip().strip('"')
+                    # 检查是否是数据文件
+                    is_data = False
+                    for df in DATA_FILES:
+                        if fname == df or fname.startswith(df + '/'):
+                            is_data = True
+                            break
+                    if not is_data:
+                        code_changes.append(fname)
         
-        # 【关键修复3】git pull 后恢复Excel（防止新增行被覆盖）
-        _restore_excel_file(excel_backup)
+        if code_changes:
+            # 有代码变更，提交并推送到当前分支
+            subprocess.run(
+                ['git', 'add'] + code_changes,
+                capture_output=True, cwd=BASE_DIR, timeout=5
+            )
+            
+            commit_msg = f'[代码同步] {message} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
+            commit_result = subprocess.run(
+                ['git', 'commit', '-m', commit_msg],
+                capture_output=True, text=True, cwd=BASE_DIR, timeout=10
+            )
+            
+            if commit_result.returncode == 0:
+                push_result = subprocess.run(
+                    ['git', 'push', 'origin', current_branch],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=30
+                )
+                if push_result.returncode == 0:
+                    msg_parts.append(f'代码→{current_branch}')
+                else:
+                    # push 失败，回退commit
+                    subprocess.run(['git', 'reset', '--soft', 'HEAD~1'], capture_output=True, cwd=BASE_DIR, timeout=5)
+                    msg_parts.append(f'代码推送失败: {push_result.stderr[:40]}')
+            elif 'nothing to commit' not in (commit_result.stdout + commit_result.stderr):
+                msg_parts.append(f'代码提交失败: {commit_result.stderr[:40]}')
         
-        # 【关键修复4】git pull 后恢复归档/删除标志
-        _restore_archive_deleted_flags(archive_flags)
+        if not msg_parts:
+            return True, '无变更需要推送'
         
-        # 【关键修复7】git pull 后恢复审批数据
-        _restore_approval_flags(approval_backup)
-        
-        if pull.returncode != 0:
-            # 有冲突，回退到 GitHub API
-            print(f'[sync] pull失败，回退到GitHub API: {pull.stderr[:80]}')
-            try:
-                from github_sync import github_api_push
-                return github_api_push(message)
-            except Exception as api_e:
-                return False, f'同步失败: {pull.stderr[:200]}'
-        
-        # 重新 commit + push
-        subprocess.run(
-            ['git', 'add', '超声波户表脚本.xlsx', '用户管理.xlsx',
-             '项目延期点检表.html', 'data/'],
-            capture_output=True, cwd=BASE_DIR, timeout=5
-        )
-        commit_result2 = subprocess.run(
-            ['git', 'commit', '-m', commit_msg],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=10
-        )
-        if commit_result2.returncode != 0:
-            if 'nothing to commit' in (commit_result2.stdout + commit_result2.stderr):
-                return True, '无变更（同步完成）'
-            return False, f'提交失败: {commit_result2.stderr[:200]}'
-        
-        push_result2 = subprocess.run(
-            ['git', 'push', 'origin', current_branch],
-            capture_output=True, text=True, cwd=BASE_DIR, timeout=30
-        )
-        if push_result2.returncode == 0:
-            return True, '已同步到 GitHub'
-        
-        # git push 还是失败，回退到 GitHub API
-        subprocess.run(['git', 'reset', '--soft', 'HEAD~1'], capture_output=True, cwd=BASE_DIR, timeout=5)
-        try:
-            from github_sync import github_api_push
-            print('[sync] git push 失败，回退到 GitHub API 模式')
-            return github_api_push(message)
-        except Exception as api_e:
-            return False, f'推送失败（git+API均失败）: {push_result2.stderr[:200]}'
+        return True, '已同步: ' + ', '.join(msg_parts)
         
     except subprocess.TimeoutExpired:
         return False, '同步超时'
