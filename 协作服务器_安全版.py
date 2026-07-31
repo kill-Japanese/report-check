@@ -2632,7 +2632,7 @@ window.CURRENT_USER = {user_info};
     items += '<div class="u-item" onclick="showChangePwdModal(); _toggleUserMenu();">🔑 修改密码</div>';
     if (hasPerm('user_manage')) {
       items += '<div class="u-divider"></div>';
-      items += '<div class="u-item" onclick="location.href=\'/admin/users\'">👥 用户管理</div>';
+      items += '<div class="u-item" onclick="location.href=\\'/admin/users\\'">👥 用户管理</div>';
     }
     items += '<div class="u-divider"></div>';
     items += '<div class="u-item danger" onclick="logout(); _toggleUserMenu();">🚪 退出登录</div>';
