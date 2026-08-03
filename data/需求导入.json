@@ -16,7 +16,7 @@
       "rejector": "",
       "reject_time": "",
       "reject_reason": "",
-      "archive_time": "2026-07-31T11:19:50.124340",
+      "archive_time": "2026-07-31T11:33:55.715966",
       "archive_type": "auto",
       "auto_archive_deadline": "2026-07-30T05:41:16.125440"
     },
@@ -63,7 +63,7 @@
       "name": "EEPROM替代",
       "source": "研发内部需求",
       "description": "IIC读写测试需要固件协助，没有固件库，固件环境尚未未配置",
-      "status": "accepted",
+      "status": "archived",
       "submitter": "yjx",
       "submit_time": "2026-07-28T08:55:50.776553",
       "acceptor": "xjq",
@@ -74,8 +74,8 @@
       "rejector": "",
       "reject_time": "",
       "reject_reason": "",
-      "archive_time": "",
-      "archive_type": "",
+      "archive_time": "2026-07-31T11:33:55.715966",
+      "archive_type": "auto",
       "auto_archive_deadline": "2026-07-31T11:29:24.088613"
     },
     {
