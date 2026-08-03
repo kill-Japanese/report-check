@@ -182,3 +182,21 @@
 [2026-07-31 11:46:24] USER_CREATE | 用户: admin | 创建用户: zgj, 角色: viewer
 [2026-07-31 11:46:44] USER_CREATE | 用户: admin | 创建用户: wyh, 角色: viewer
 [2026-07-31 11:47:02] USER_CREATE | 用户: admin | 创建用户: shj, 角色: viewer
+[2026-07-31 11:47:23] USER_CREATE | 用户: admin | 创建用户: yjx, 角色: viewer
+[2026-07-31 12:02:32] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-31 12:07:33] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-07-31 12:09:32] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-01 03:22:24] LOGIN | 用户: mwh | 登录成功
+[2026-08-01 06:49:32] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-01 10:49:40] LOGIN | 用户: xjq | 登录成功
+[2026-08-01 10:49:40] LOGIN | 用户: xjq | 登录成功
+[2026-08-01 11:10:32] SESSION_CLEANUP | 用户: system | 清理了 2 个过期 Session
+[2026-08-02 04:06:35] LOGIN | 用户: xjq | 登录成功
+[2026-08-02 04:06:38] LOGIN | 用户: xjq | 登录成功
+[2026-08-02 04:27:32] SESSION_CLEANUP | 用户: system | 清理了 2 个过期 Session
+[2026-08-03 00:32:14] LOGIN | 用户: dajinyu | 登录成功
+[2026-08-03 00:33:00] APPROVAL_SUBMIT | 用户: dajinyu | OP-20260803-001: archive
+[2026-08-03 00:33:09] APPROVAL_SUBMIT | 用户: dajinyu | OP-20260803-002: archive
+[2026-08-03 00:39:19] RATE_LIMIT | 用户: system | IP 122.227.186.142 因登录失败次数过多被锁定 15 分钟
+[2026-08-03 01:02:39] LOGIN | 用户: xjq | 登录成功
+[2026-08-03 01:03:02] PROJECT_ARCHIVE | 用户: xjq | ID=26: 归档项目成功; ID=26; （报表和同步正在后台执行）
