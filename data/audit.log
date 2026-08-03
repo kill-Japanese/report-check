@@ -183,3 +183,6 @@
 [2026-08-03 01:55:53] IMPORT_PARSE | 用户: xjq | type=pdf, filename=DLMS联调计划.pdf
 [2026-08-03 01:56:18] IMPORT_COMMIT | 用户: xjq | 批量导入 17 条
 [2026-08-03 01:56:23] DATA_SYNC | 用户: xjq | 数据同步更新
+[2026-08-03 01:57:29] USER_UPDATE | 用户: admin | 更新用户: shj, 字段: ['role', 'email']
+[2026-08-03 01:57:54] LOGIN | 用户: shj | 登录成功
+[2026-08-03 01:59:01] USER_CREATE | 用户: admin | 创建用户: zgq, 角色: viewer
