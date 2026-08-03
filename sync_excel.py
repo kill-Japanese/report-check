@@ -2523,7 +2523,40 @@ def approve_operation(op_id, approver, comment=''):
             if isinstance(after_data, str) and after_data:
                 after_data = json.loads(after_data)
             if after_data:
-                ok, msg = action_add_project(after_data, approver)
+                resources = after_data.get('resources', None)
+                if resources and isinstance(resources, list) and len(resources) > 0:
+                    # 批量新增（同类项）
+                    success_count = 0
+                    fail_count = 0
+                    first_err = ''
+                    for res in resources:
+                        item = {
+                            '部门': after_data.get('部门', ''),
+                            '项目': after_data.get('项目', ''),
+                            '项目开始时间': after_data.get('项目开始时间', '1900-01-01'),
+                            '项目结束时间': after_data.get('项目结束时间', '2100-01-01'),
+                            '项目描述': after_data.get('项目描述', ''),
+                            '资源类型': res.get('资源类型', ''),
+                            '资源名称': res.get('资源名称', ''),
+                            '资源开始时间': res.get('资源开始时间', ''),
+                            '资源结束时间': res.get('资源结束时间', ''),
+                            '日平均工时': res.get('日平均工时', 0),
+                            '已归档': after_data.get('已归档', False),
+                        }
+                        ok, msg = action_add_project(item, approver)
+                        if ok:
+                            success_count += 1
+                        else:
+                            fail_count += 1
+                            if not first_err:
+                                first_err = msg
+                    if fail_count == 0:
+                        ok, msg = True, f'审批通过，成功添加 {success_count} 个资源'
+                    else:
+                        ok, msg = False, f'部分失败：成功{success_count}个，失败{fail_count}个。第一个错误：{first_err}'
+                else:
+                    # 单条新增（向后兼容）
+                    ok, msg = action_add_project(after_data, approver)
             else:
                 ok, msg = False, '新增操作缺少项目数据'
         else:

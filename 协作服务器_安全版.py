@@ -1567,24 +1567,80 @@ window.CURRENT_USER = {user_info};
                 self.send_json({'success': False, 'message': '无权限添加项目'}, status=403)
                 return
             
+            resources = data.get('resources', None)
+            project_name = data.get('项目', '')
+            
             if can_edit:
                 # editor/admin：直接写入
-                ok, msg = sync_excel.action_add_project(data, user['username'])
-                auth._audit_log('PROJECT_ADD', user['username'], msg[:100])
-                self.send_json({'success': ok, 'message': msg, 'need_approval': False})
+                if resources and isinstance(resources, list) and len(resources) > 0:
+                    # 批量新增（同类项）
+                    success_count = 0
+                    fail_count = 0
+                    first_msg = ''
+                    for res in resources:
+                        item = {
+                            '部门': data.get('部门', ''),
+                            '项目': data.get('项目', ''),
+                            '项目开始时间': data.get('项目开始时间', '1900-01-01'),
+                            '项目结束时间': data.get('项目结束时间', '2100-01-01'),
+                            '项目描述': data.get('项目描述', ''),
+                            '资源类型': res.get('资源类型', ''),
+                            '资源名称': res.get('资源名称', ''),
+                            '资源开始时间': res.get('资源开始时间', ''),
+                            '资源结束时间': res.get('资源结束时间', ''),
+                            '日平均工时': res.get('日平均工时', 0),
+                            '已归档': data.get('已归档', False),
+                        }
+                        ok, msg = sync_excel.action_add_project(item, user['username'])
+                        if ok:
+                            success_count += 1
+                        else:
+                            fail_count += 1
+                            if not first_msg:
+                                first_msg = msg
+                    auth._audit_log('PROJECT_ADD_BATCH', user['username'],
+                                    f'批量新增{len(resources)}个: 成功{success_count},失败{fail_count}, 项目:{project_name}')
+                    if fail_count == 0:
+                        self.send_json({'success': True, 'message': f'成功添加 {success_count} 个资源', 'need_approval': False,
+                                        'success_count': success_count, 'fail_count': fail_count})
+                    else:
+                        self.send_json({'success': False,
+                                        'message': f'部分失败：成功{success_count}个，失败{fail_count}个。第一个错误：{first_msg}',
+                                        'need_approval': False,
+                                        'success_count': success_count, 'fail_count': fail_count})
+                else:
+                    # 单条新增（向后兼容）
+                    ok, msg = sync_excel.action_add_project(data, user['username'])
+                    auth._audit_log('PROJECT_ADD', user['username'], msg[:100])
+                    self.send_json({'success': ok, 'message': msg, 'need_approval': False})
             else:
                 # viewer：走审批流程
-                project_name = data.get('项目', '')
-                approval_data = {
-                    'operation_type': 'add',
-                    'project_ids': [],  # 新增项目还没有ID
-                    'project_names': [project_name] if project_name else [],
-                    'before_data': {},
-                    'after_data': data,
-                }
-                ok, msg, op_id = sync_excel.submit_approval(approval_data, user['username'])
-                auth._audit_log('APPROVAL_SUBMIT', user['username'], f'{op_id}: add项目:{project_name}')
-                self.send_json({'success': ok, 'message': msg, 'need_approval': True, 'op_id': op_id})
+                if resources and isinstance(resources, list) and len(resources) > 0:
+                    # 批量新增审批（同类项）
+                    project_names = [project_name] * len(resources) if project_name else []
+                    approval_data = {
+                        'operation_type': 'add',
+                        'project_ids': [],
+                        'project_names': project_names,
+                        'before_data': {},
+                        'after_data': data,  # 包含 resources 数组
+                    }
+                    ok, msg, op_id = sync_excel.submit_approval(approval_data, user['username'])
+                    auth._audit_log('APPROVAL_SUBMIT', user['username'],
+                                    f'{op_id}: 批量add项目:{project_name} ({len(resources)}个资源)')
+                    self.send_json({'success': ok, 'message': msg, 'need_approval': True, 'op_id': op_id})
+                else:
+                    # 单条新增审批（向后兼容）
+                    approval_data = {
+                        'operation_type': 'add',
+                        'project_ids': [],
+                        'project_names': [project_name] if project_name else [],
+                        'before_data': {},
+                        'after_data': data,
+                    }
+                    ok, msg, op_id = sync_excel.submit_approval(approval_data, user['username'])
+                    auth._audit_log('APPROVAL_SUBMIT', user['username'], f'{op_id}: add项目:{project_name}')
+                    self.send_json({'success': ok, 'message': msg, 'need_approval': True, 'op_id': op_id})
             return
 
         # --- 删除项目（需 delete 权限，仅admin）---
