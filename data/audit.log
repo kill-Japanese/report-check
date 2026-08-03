@@ -182,3 +182,4 @@
 [2026-08-03 01:55:47] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
 [2026-08-03 01:55:53] IMPORT_PARSE | 用户: xjq | type=pdf, filename=DLMS联调计划.pdf
 [2026-08-03 01:56:18] IMPORT_COMMIT | 用户: xjq | 批量导入 17 条
+[2026-08-03 01:56:23] DATA_SYNC | 用户: xjq | 数据同步更新
