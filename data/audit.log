@@ -174,48 +174,11 @@
 [2026-07-27 05:39:29] LOGIN | 用户: xjq | 登录成功
 [2026-07-27 05:41:48] PROJECT_ARCHIVE | 用户: xjq | ID=218: 归档项目成功; ID=218; （报表和同步正在后台执行）
 [2026-07-27 05:41:52] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-07-31 11:33:55] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
-[2026-07-31 11:39:16] LOGIN | 用户: xjq | 登录成功
-[2026-07-31 11:40:45] LOGIN | 用户: ycx | 登录成功
-[2026-07-31 11:41:59] PASSWORD_CHANGE | 用户: ycx | 修改密码成功
-[2026-07-31 11:42:10] LOGIN | 用户: ycx | 登录成功
-[2026-07-31 11:46:24] USER_CREATE | 用户: admin | 创建用户: zgj, 角色: viewer
-[2026-07-31 11:46:44] USER_CREATE | 用户: admin | 创建用户: wyh, 角色: viewer
-[2026-07-31 11:47:02] USER_CREATE | 用户: admin | 创建用户: shj, 角色: viewer
-[2026-07-31 11:47:23] USER_CREATE | 用户: admin | 创建用户: yjx, 角色: viewer
-[2026-07-31 12:02:32] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-31 12:07:33] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-07-31 12:09:32] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-08-01 03:22:24] LOGIN | 用户: mwh | 登录成功
-[2026-08-01 06:49:32] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
-[2026-08-01 10:49:40] LOGIN | 用户: xjq | 登录成功
-[2026-08-01 10:49:40] LOGIN | 用户: xjq | 登录成功
-[2026-08-01 11:10:32] SESSION_CLEANUP | 用户: system | 清理了 2 个过期 Session
-[2026-08-02 04:06:35] LOGIN | 用户: xjq | 登录成功
-[2026-08-02 04:06:38] LOGIN | 用户: xjq | 登录成功
-[2026-08-02 04:27:32] SESSION_CLEANUP | 用户: system | 清理了 2 个过期 Session
-[2026-08-03 00:32:14] LOGIN | 用户: dajinyu | 登录成功
-[2026-08-03 00:33:00] APPROVAL_SUBMIT | 用户: dajinyu | OP-20260803-001: archive
-[2026-08-03 00:33:09] APPROVAL_SUBMIT | 用户: dajinyu | OP-20260803-002: archive
-[2026-08-03 00:39:19] RATE_LIMIT | 用户: system | IP 122.227.186.142 因登录失败次数过多被锁定 15 分钟
-[2026-08-03 01:02:39] LOGIN | 用户: xjq | 登录成功
-[2026-08-03 01:03:02] PROJECT_ARCHIVE | 用户: xjq | ID=26: 归档项目成功; ID=26; （报表和同步正在后台执行）
-[2026-08-03 01:03:09] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-08-03 01:05:12] APPROVAL_APPROVE | 用户: xjq | OP-20260803-002: 审批通过，操作已生效: 归档项目成功; ID=26; （报表和同步正在后台执行）
-[2026-08-03 01:05:28] RATE_LIMIT | 用户: system | IP 223.94.39.254 因登录失败次数过多被锁定 15 分钟
-[2026-08-03 01:05:42] APPROVAL_APPROVE | 用户: xjq | OP-20260803-001: 审批通过，操作已生效: 归档项目成功; ID=215; （报表和同步正在后台执行）
-[2026-08-03 01:07:38] PROJECT_ADD | 用户: xjq | 新增成功(ID=224); （报表和同步正在后台执行）
-[2026-08-03 01:07:47] PROJECT_ADD | 用户: xjq | 新增成功(ID=225); （报表和同步正在后台执行）
-[2026-08-03 01:07:47] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-08-03 01:08:29] PROJECT_EDIT | 用户: xjq | ID=225: 编辑项目成功; ID=225; （报表和同步正在后台执行）
-[2026-08-03 01:08:34] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-08-03 01:08:43] PROJECT_EDIT | 用户: xjq | ID=224: 编辑项目成功; ID=224; （报表和同步正在后台执行）
-[2026-08-03 01:08:57] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-08-03 01:08:58] PROJECT_EDIT | 用户: xjq | ID=224: 编辑项目成功; ID=224; （报表和同步正在后台执行）
-[2026-08-03 01:09:03] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-08-03 01:09:22] PROJECT_EDIT | 用户: xjq | ID=224: 编辑项目成功; ID=224; （报表和同步正在后台执行）
-[2026-08-03 01:09:28] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-08-03 01:09:43] DATA_SYNC | 用户: xjq | 数据同步更新
-[2026-08-03 01:12:17] LOGIN | 用户: ycx | 登录成功
-[2026-08-03 01:14:50] USER_CREATE | 用户: admin | 创建用户: wcw, 角色: viewer
-[2026-08-03 01:20:48] PROJECT_EDIT | 用户: xjq | ID=18: 编辑项目成功; ID=18; （报表和同步正在后台执行）
+[2026-08-03 01:48:45] AUTO_SYNC | 用户: system | 已启动自动同步，间隔 1800 秒
+[2026-08-03 01:51:52] LOGIN | 用户: xjq | 登录成功
+[2026-08-03 01:52:10] IMPORT_PARSE | 用户: xjq | type=pdf, filename=DLMS联调计划.pdf
+[2026-08-03 01:53:34] IMPORT_PARSE | 用户: xjq | type=pdf, filename=DLMS联调计划.pdf
+[2026-08-03 01:53:44] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
+[2026-08-03 01:55:47] IMPORT_PARSE | 用户: xjq | type=pdf, filename=3.pdf
+[2026-08-03 01:55:53] IMPORT_PARSE | 用户: xjq | type=pdf, filename=DLMS联调计划.pdf
+[2026-08-03 01:56:18] IMPORT_COMMIT | 用户: xjq | 批量导入 17 条
