@@ -186,3 +186,11 @@
 [2026-08-03 08:12:04] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
 [2026-08-03 08:23:46] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
 [2026-08-03 08:51:35] APPROVAL_REJECT | 用户: xjq | ROW-150: 审批已拒绝
+[2026-08-03 08:51:55] APPROVAL_REJECT | 用户: xjq | ROW-151: 审批已拒绝
+[2026-08-03 10:03:08] LOGIN | 用户: zky | 登录成功
+[2026-08-03 10:35:47] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-03 11:12:25] LOGIN | 用户: zgq | 登录成功
+[2026-08-03 17:19:46] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-04 00:31:39] LOGIN | 用户: zky | 登录成功
+[2026-08-04 00:49:08] LOGIN | 用户: xjq | 登录成功
+[2026-08-04 00:49:57] PROJECT_EDIT | 用户: xjq | ID=19: 编辑项目成功; ID=19; （报表和同步正在后台执行）
