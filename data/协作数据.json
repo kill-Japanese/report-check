@@ -4,117 +4,117 @@
   "checked": {},
   "archived": {
     "4": {
-      "time": "2026-07-31T11:40:47.356Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "巴西NB-V3",
       "fromExcel": true
     },
     "12": {
-      "time": "2026-07-31T11:40:47.356Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "巴西脉冲-V3",
       "fromExcel": true
     },
     "17": {
-      "time": "2026-07-31T11:40:47.356Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "巴西WMBUS-walkby",
       "fromExcel": true
     },
     "24": {
-      "time": "2026-07-29T00:57:48.596Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "巴西LoRa-Walkby方案",
       "fromExcel": true
     },
     "25": {
-      "time": "2026-07-24T08:08:37.613Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "智利-NB",
       "fromExcel": true
     },
     "26": {
-      "time": "2026-08-03T01:12:21.668Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "秘鲁-CAT1",
       "fromExcel": true
     },
     "31": {
-      "time": "2026-07-24T08:08:37.613Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "哥伦比亚相关",
       "fromExcel": true
     },
     "49": {
-      "time": "2026-07-24T08:08:37.613Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "巴勒斯坦-LoRa",
       "fromExcel": true
     },
     "50": {
-      "time": "2026-07-24T08:08:37.613Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "印尼 BLE表",
       "fromExcel": true
     },
     "63": {
-      "time": "2026-07-31T11:40:47.356Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "应届生实习",
       "fromExcel": true
     },
     "64": {
-      "time": "2026-07-31T11:40:47.356Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "应届生实习",
       "fromExcel": true
     },
     "65": {
-      "time": "2026-07-31T11:40:47.356Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "应届生实习",
       "fromExcel": true
     },
     "66": {
-      "time": "2026-07-31T11:40:47.356Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "应届生实习",
       "fromExcel": true
     },
     "147": {
-      "time": "2026-07-24T08:08:37.613Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "巴勒斯坦超声户表二开",
       "fromExcel": true
     },
     "148": {
-      "time": "2026-07-24T08:08:37.613Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "巴勒斯坦超声户表二开",
       "fromExcel": true
     },
     "149": {
-      "time": "2026-07-31T11:40:47.356Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "巴勒斯坦超声户表二开",
       "fromExcel": true
     },
     "153": {
-      "time": "2026-08-03T05:45:41.592Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "巴勒斯坦超声户表二开",
       "fromExcel": true
     },
     "165": {
-      "time": "2026-07-24T08:08:37.613Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "欧洲短款表",
       "fromExcel": true
     },
     "215": {
-      "time": "2026-08-03T01:12:21.668Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "研究院LoRaWAN",
       "fromExcel": true
     },
     "216": {
-      "time": "2026-07-29T00:57:48.597Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "TEST demand",
       "fromExcel": true
     },
     "217": {
-      "time": "2026-07-29T00:57:48.597Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "TEST demand",
       "fromExcel": true
     },
     "218": {
-      "time": "2026-07-29T00:57:48.597Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "测试看板",
       "fromExcel": true
     },
     "220": {
-      "time": "2026-08-03T05:45:41.592Z",
+      "time": "2026-08-04T08:12:20.790Z",
       "project": "EEPROM驱动协助",
       "fromExcel": true
     }
@@ -133,9 +133,11 @@
     "袁知正": "zhizheng.yuan@hxgroup.com",
     "贾峰": "feng.jia@hxgroup.com",
     "采购": "gou.cai@hxgroup.com",
-    "韩燕飞": "yanfei.han@hxgroup.com"
+    "韩燕飞": "yanfei.han@hxgroup.com",
+    "贺敬轩": "jingxuan.he@hxgroup.com",
+    "曾颂豪": "songhao.zeng@hxgroup.com"
   },
   "newProjects": [],
   "deletedIds": [],
-  "lastUpdate": "1785810641809"
+  "lastUpdate": "1785831139310"
 }
