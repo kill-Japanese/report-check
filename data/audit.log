@@ -209,3 +209,18 @@
 [2026-08-04 08:11:39] LOGIN | 用户: flora | 登录成功
 [2026-08-04 08:12:19] LOGIN | 用户: flora | 登录成功
 [2026-08-04 08:16:35] DATA_SYNC | 用户: flora | 数据同步更新
+[2026-08-04 08:18:42] LOGIN | 用户: wcw | 登录成功
+[2026-08-04 09:08:47] LOGIN | 用户: dajinyu | 登录成功
+[2026-08-04 09:22:45] LOGIN | 用户: dajinyu | 登录成功
+[2026-08-04 09:22:47] LOGIN | 用户: dajinyu | 登录成功
+[2026-08-04 09:26:33] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-04 09:37:04] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-04 09:42:47] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-04 09:54:31] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-04 10:00:38] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-04 10:40:38] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-04 11:44:50] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-04 12:12:20] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-04 15:48:56] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-05 00:35:00] LOGIN | 用户: ycx | 登录成功
+[2026-08-05 00:35:40] PROJECT_EDIT | 用户: ycx | ID=226: 编辑项目成功; ID=226; （报表和同步正在后台执行）
