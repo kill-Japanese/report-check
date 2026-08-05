@@ -235,3 +235,10 @@
 [2026-08-05 00:43:31] APPROVAL_SUBMIT | 用户: mwh | OP-20260805-001: archive
 [2026-08-05 00:44:23] DATA_SYNC | 用户: ycx | 数据同步更新
 [2026-08-05 00:44:24] PROJECT_ARCHIVE | 用户: ycx | ID=227: 归档项目成功; ID=227; （报表和同步正在后台执行）
+[2026-08-05 00:45:11] APPROVAL_SUBMIT | 用户: mwh | OP-20260805-002: archive
+[2026-08-05 02:08:38] LOGIN | 用户: zgq | 登录成功
+[2026-08-05 03:01:13] LOGIN | 用户: wcw | 登录成功
+[2026-08-05 03:21:04] LOGIN | 用户: flora | 登录成功
+[2026-08-05 04:10:34] SESSION_CLEANUP | 用户: system | 清理了 2 个过期 Session
+[2026-08-05 05:18:28] SESSION_CLEANUP | 用户: system | 清理了 1 个过期 Session
+[2026-08-05 06:21:27] APPROVAL_CANCEL | 用户: zgq | OP-20260804-002: 撤回审批申请
