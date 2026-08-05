@@ -2,7 +2,123 @@
   "localEdits": {},
   "notes": {},
   "checked": {},
-  "archived": {},
+  "archived": {
+    "4": {
+      "time": "2026-07-31T11:40:47.356Z",
+      "project": "巴西NB-V3",
+      "fromExcel": true
+    },
+    "12": {
+      "time": "2026-07-31T11:40:47.356Z",
+      "project": "巴西脉冲-V3",
+      "fromExcel": true
+    },
+    "17": {
+      "time": "2026-07-31T11:40:47.356Z",
+      "project": "巴西WMBUS-walkby",
+      "fromExcel": true
+    },
+    "24": {
+      "time": "2026-07-29T00:57:48.596Z",
+      "project": "巴西LoRa-Walkby方案",
+      "fromExcel": true
+    },
+    "25": {
+      "time": "2026-07-24T08:08:37.613Z",
+      "project": "智利-NB",
+      "fromExcel": true
+    },
+    "26": {
+      "time": "2026-08-03T01:12:21.668Z",
+      "project": "秘鲁-CAT1",
+      "fromExcel": true
+    },
+    "31": {
+      "time": "2026-07-24T08:08:37.613Z",
+      "project": "哥伦比亚相关",
+      "fromExcel": true
+    },
+    "49": {
+      "time": "2026-07-24T08:08:37.613Z",
+      "project": "巴勒斯坦-LoRa",
+      "fromExcel": true
+    },
+    "50": {
+      "time": "2026-07-24T08:08:37.613Z",
+      "project": "印尼 BLE表",
+      "fromExcel": true
+    },
+    "63": {
+      "time": "2026-07-31T11:40:47.356Z",
+      "project": "应届生实习",
+      "fromExcel": true
+    },
+    "64": {
+      "time": "2026-07-31T11:40:47.356Z",
+      "project": "应届生实习",
+      "fromExcel": true
+    },
+    "65": {
+      "time": "2026-07-31T11:40:47.356Z",
+      "project": "应届生实习",
+      "fromExcel": true
+    },
+    "66": {
+      "time": "2026-07-31T11:40:47.356Z",
+      "project": "应届生实习",
+      "fromExcel": true
+    },
+    "147": {
+      "time": "2026-07-24T08:08:37.613Z",
+      "project": "巴勒斯坦超声户表二开",
+      "fromExcel": true
+    },
+    "148": {
+      "time": "2026-07-24T08:08:37.613Z",
+      "project": "巴勒斯坦超声户表二开",
+      "fromExcel": true
+    },
+    "149": {
+      "time": "2026-07-31T11:40:47.356Z",
+      "project": "巴勒斯坦超声户表二开",
+      "fromExcel": true
+    },
+    "153": {
+      "time": "2026-08-03T05:45:41.592Z",
+      "project": "巴勒斯坦超声户表二开",
+      "fromExcel": true
+    },
+    "165": {
+      "time": "2026-07-24T08:08:37.613Z",
+      "project": "欧洲短款表",
+      "fromExcel": true
+    },
+    "215": {
+      "time": "2026-08-03T01:12:21.668Z",
+      "project": "研究院LoRaWAN",
+      "fromExcel": true
+    },
+    "216": {
+      "time": "2026-07-29T00:57:48.597Z",
+      "project": "TEST demand",
+      "fromExcel": true
+    },
+    "217": {
+      "time": "2026-07-29T00:57:48.597Z",
+      "project": "TEST demand",
+      "fromExcel": true
+    },
+    "218": {
+      "time": "2026-07-29T00:57:48.597Z",
+      "project": "测试看板",
+      "fromExcel": true
+    },
+    "220": {
+      "time": "2026-08-03T05:45:41.592Z",
+      "project": "EEPROM驱动协助",
+      "fromExcel": true
+    }
+  },
   "customEmails": {
     "刘璠": "fan.liu@hxgroup.com",
     "张丹": "dan.zhang@hxgroup.com",
@@ -23,5 +139,5 @@
   },
   "newProjects": [],
   "deletedIds": [],
-  "lastUpdate": "2026-08-05T00:36:53.341352"
+  "lastUpdate": "1785890663620"
 }
